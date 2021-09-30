@@ -5,6 +5,7 @@ punc        = anything:x ?(x in punctuation)
 digit       = anything:x ?(x in '0123456789')
 letterdigit = letter|digit
 word        = <(letter|punc)+>:ls -> str(ls)
+string      = <((letter|digit)+ ws)+>:str -> str
 
 uppercase_letter = anything:x ?(x in ascii_uppercase)
 lowercase_letter = anything:x ?(x in ascii_lowercase)
@@ -51,6 +52,26 @@ ascii_packet_diagram = ascii_packet_header:header
                                         None, 
                                         None, 
                                         None)
+
+# QUIC Structure
+
+quic_field = string '(' (number|'i') ')' (ws '=' ws (letter|digit)+)?
+quic_opt_field = '[' ws quic_field ws ']'
+quic_rep_field = quic_field ws '...'
+
+quic_packet_structure = ws string:title ws '{'
+        (nl (quic_rep_field|quic_field|quic_opt_field) ',')+:fields
+        nl ws '}' 
+        ascii_packet_diag_ref:fig_ref -> rfc.Artwork( rfc.Text("".join([title] + fields)),
+                                  "left",
+                                  None,
+                                  fig_ref[0] if fig_ref else None,
+                                  None, 
+                                  fig_ref[1] if fig_ref else None,
+                                  None, 
+                                  None, 
+                                  None, 
+                                  None)
                                         
 
 
@@ -83,7 +104,7 @@ rfc = front:(front_obj, doc_name_str, ipr_code, toc_depth)
 
 # Middle
 
-section = section_name:(depth, name) nl ((ascii_packet_diagram|t):text nl -> text)*:ts
+section = section_name:(depth, name) nl ((quic_packet_structure|ascii_packet_diagram|t):text nl -> text)*:ts
                          -> (depth, rfc.Section(rfc.Name([rfc.Text(name)]),
                                         ts,
                                         [],

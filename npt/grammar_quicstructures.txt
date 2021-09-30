@@ -1,0 +1,42 @@
+hspace = ' ' | '\t'
+vspace =  '\r\n' | '\r' | '\n'
+ws = (hspace | vspace)*
+
+digit = anything:x ?(x in '0123456789') -> x
+number = <digit+>:num -> num
+char = anything:x ?(x.lower() in 'abcdefghijklmonpqrstuvwxyz-_') -> x
+string = <((char|digit)+ ws)+>:str -> str
+dots = '..'
+hexchar = anything:x ?(x.lower() in '0123456789abcdef') -> x
+hex = '0x' <hexchar+>:chars -> '0x'+chars
+
+value = hex:x -> int(x, 0)
+    | number
+
+range = value:first dots value:last -> (first,last)
+
+arblen = dots -> '?'
+varlen = value:first dots value:last -> (first, last)
+minval = value:min dots -> (min, '?')
+maxval = dots value:max -> ('0', max)
+
+size = varlen
+    | minval
+    | maxval
+    | arblen
+    | 'i' -> -1 
+    | value
+
+basic_field = string:name ws '(' size:size ')' -> (name.strip(), size)
+fixed_field = string:name ws '(' size:size ')' ws '=' ws (range|value):val -> (name.strip(), size, val)
+opt_field = '[' (fixed_field|basic_field):x ']' -> (x + ('?',))
+rep_field = (fixed_field|basic_field):x ws '...' -> (x + ('...',))
+
+field = (fixed_field
+    | rep_field
+    | basic_field
+    | opt_field):field ws ',' -> field
+
+packet = string:structure ws '{' 
+        (ws field)+:fields
+        ws '}' -> (structure.strip(), fields)

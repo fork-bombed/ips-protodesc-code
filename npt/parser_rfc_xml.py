@@ -819,7 +819,7 @@ def parse_td(xmlElement: ET.Element) -> rfc.TD:
     if xmlElement.text is not None:
         contentB.append(rfc.Text(xmlElement.text))
     if len(contentB) == 0:
-        assert len(contentA) > 0
+        #assert len(contentA) > 0
         return rfc.TD(contentA,
                       xmlElement.attrib.get("align", "left"),
                       xmlElement.attrib.get("anchor", None),

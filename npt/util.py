@@ -523,8 +523,8 @@ def parse_cmdline( arglist : List[str] ) -> Tuple[argparse.Namespace,OptionConta
                     metavar="format",
                     nargs=1,
                     default=["simple,rust"],
-                    help=f"comma delimited list of output formats. "
-                         f"current output formats are simple,rust")
+                    help=f"Comma delimited list of output formats. "
+                         f"Current output formats are simple, rust")
     ap.add_argument(
         "-f",
         "--force",
@@ -544,6 +544,16 @@ def parse_cmdline( arglist : List[str] ) -> Tuple[argparse.Namespace,OptionConta
              f"will downloaded. Otherwise all revisions will be downloaded. "
              f"draft format : draft[-rev][.extn]."
              f"rfc format : rfc[.extn]")
+    ap.add_argument(
+        "-p",
+        "--parser",
+        metavar="parser",
+        nargs=1,
+        default=["ascii,quic"],
+        help=f"Comma delimited list of parser formats. "
+                f"Current parsers are ascii, quic. "
+                f"Parser formats specify how the document represents "
+                f"packet structures, e.g as an ASCII diagram or a structure.")
 
     _obj = ap.parse_args(arglist)
 
