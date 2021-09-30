@@ -819,6 +819,11 @@ def parse_td(xmlElement: ET.Element) -> rfc.TD:
     if xmlElement.text is not None:
         contentB.append(rfc.Text(xmlElement.text))
     if len(contentB) == 0:
+        # TODO: This assert line breaks QUIC parsing as some tables
+        #       have empty values (as seen in https://datatracker.ietf.org/doc/html/rfc9000#section-12.4).
+        #       Implement a better check that replaces empty values 
+        #       with a none-value if check is even needed. - Ryan
+
         #assert len(contentA) > 0
         return rfc.TD(contentA,
                       xmlElement.attrib.get("align", "left"),

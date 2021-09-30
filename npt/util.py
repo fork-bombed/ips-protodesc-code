@@ -46,6 +46,7 @@ from pathlib import Path
 # supported document extensions
 valid_extns = [".xml", ".txt"]
 output_formats = ["simple", "rust"]
+parser_formats = ["asciidiagram", "quicstructure"]
 
 # npt epoch definition
 epoch = '1970-01-01T00:00:00'
@@ -478,6 +479,7 @@ class OptionContainer:
     root_dir  : pathlib.Path
     dlopts    : DownloadOptions
     output_fmt: List[str]
+    parser_fmt: Optional[str]
     infiles   : List[IETF_URI]
 
     def __post_init__(self) -> None:
@@ -485,6 +487,7 @@ class OptionContainer:
         assert self.root_dir.exists() and self.root_dir.is_dir(), f"Cannot write to {self.root_dir}"
         for ofmt in self.output_fmt:
             assert ofmt in output_formats, f"output fmt {ofmt} not in {output_formats}"
+        assert self.parser_fmt in parser_formats, f"parser fmt {self.parser_fmt} not in {parser_formats}"
 
 
 def parse_cmdline( arglist : List[str] ) -> Tuple[argparse.Namespace,OptionContainer]:
@@ -549,9 +552,9 @@ def parse_cmdline( arglist : List[str] ) -> Tuple[argparse.Namespace,OptionConta
         "--parser",
         metavar="parser",
         nargs=1,
-        default=["ascii,quic"],
-        help=f"Comma delimited list of parser formats. "
-                f"Current parsers are ascii, quic. "
+        default=["asciidiagram"],
+        help=f"Provide name of parser format. "
+                f"Current parsers are asciidiagram and quicstructure. "
                 f"Parser formats specify how the document represents "
                 f"packet structures, e.g as an ASCII diagram or a structure.")
 
@@ -559,7 +562,8 @@ def parse_cmdline( arglist : List[str] ) -> Tuple[argparse.Namespace,OptionConta
 
     opt = OptionContainer(pathlib.Path(_obj.dir[0]),
                           DownloadOptions(force=_obj.force),
-                          _obj.outformat[0].split(sep=','), [])
+                          _obj.outformat[0].split(sep=','),
+                          _obj.parser[0], [])
     return (_obj, opt )
 
 

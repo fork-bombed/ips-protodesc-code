@@ -37,9 +37,50 @@ import npt.protocol
 from npt.parser import Parser
 from typing     import cast, Optional, Union, List, Tuple
 
+def stem(phrase):
+    if phrase[-1] == 's':
+        return phrase[:-1]
+    else:
+        return phrase
+
+def valid_field_name_convertor(name):
+    if name is not None:
+        return name.lower().replace(" ", "_")
+    else:
+        return None
+
+def valid_type_name_convertor(name):
+    if name[0].isdigit():
+        name = "T" + name
+    name = ' '.join(name.replace('\n',' ').split())
+    return name.capitalize().replace(" ", "_").replace("-", "_")
+
 class QUICStructureParser(Parser):
     def __init__(self) -> None:
         super().__init__()
+
+    def new_field(self, full_label, short_label, options, size, units, value_constraint, is_present, is_array):
+        return {
+                "full_label": valid_field_name_convertor(full_label),
+                "options" : options, 
+                "size": size, 
+                "units": units, 
+                "value_constraint": value_constraint, 
+                "is_present": is_present, 
+                "is_array": is_array 
+                }
+
+    def new_this(self):
+        return ("this")
+
+    def new_methodinvocation(self, target, method, arguments):
+        return("methodinvocation", target, method, arguments)
+
+    def new_fieldaccess(self, target, field_name):
+        return ("fieldaccess", target, field_name)
+
+    def new_constant(self, type_name, value):
+        return ("const", type_name, value)
 
     def build_parser(self):
         self.structs = {}

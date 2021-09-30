@@ -29,6 +29,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # =================================================================================================
 
+from npt.parser_quicstructures import QUICStructureParser
 import sys
 from typing  import Optional, List, Any, cast
 from pathlib import Path
@@ -151,13 +152,17 @@ def main():
     # TODO : Currently we have only one parser. When multiple parsers
     # for each sub-subcomponent are available, loop through them and initialise
     #dom_parser = { "asciidiagrams" : parsers.asciidiagrams.asciidiagrams_parser.AsciiDiagramsParser() }
-    dom_parser = AsciiDiagramsParser()
+    dom_parsers = {
+            "asciidiagram"  : AsciiDiagramsParser(),
+            "quicstructure" : QUICStructureParser()
+            }
     output_formatter = {
             "simple" : SimpleFormatter(),
             "rust"   : RustFormatter()
             }
 
     opt = npt.util.read_usr_opts(sys.argv[1:])
+    dom_parser = dom_parsers.get(opt.parser_fmt, 'asciidiagrams')
     for idx, doc in enumerate(opt.infiles):
         parsed_content = parse_input_file( doc )
         if parsed_content is None :
