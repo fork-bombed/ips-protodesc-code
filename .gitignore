@@ -2,3 +2,6 @@
 htmlcov/
 .DS_Store
 *.pyc
+.vscode
+ietf-data-cache/*
+__pycache__
