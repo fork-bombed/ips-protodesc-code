@@ -162,10 +162,11 @@ def main():
             }
 
     opt = npt.util.read_usr_opts(sys.argv[1:])
-    dom_parser = dom_parsers.get(opt.parser_fmt, 'asciidiagrams')
+    dom_parser = dom_parsers.get(opt.parser_fmt, 'asciidiagram')
     for idx, doc in enumerate(opt.infiles):
         parsed_content = parse_input_file( doc )
         if parsed_content is None :
+            # TODO: Implement custom parser exception
             print(f"Error : Parsing {doc.get_filepath_in()} -> container = {doc}")
             continue
 
@@ -174,6 +175,7 @@ def main():
         try:
             protocol.synthesise()
         except Exception as e:
+            # TODO: Implement custom parser exception
             print(f"Error: could not synthesise protocol ({e})")
             continue
 

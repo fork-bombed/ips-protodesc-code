@@ -3,7 +3,7 @@ vspace =  '\r\n' | '\r' | '\n'
 ws = (hspace | vspace)*
 
 digit = anything:x ?(x in '0123456789') -> x
-number = <digit+>:num -> num
+number = <digit+>:num -> int(num)
 char = anything:x ?(x.lower() in 'abcdefghijklmonpqrstuvwxyz-_') -> x
 string = <((char|digit)+ ws)+>:str -> str
 dots = '..'
@@ -24,10 +24,10 @@ size = varlen
     | minval
     | maxval
     | arblen
-    | 'i' -> -1 
-    | value
+    | 'i' -> new_constant(-1)
+    | value:val -> new_constant(val)
 
-basic_field = string:name ws '(' size:size ')' -> (name.strip(), size)
+basic_field = string:name ws '(' size:size ')' -> new_field(name.strip(), size)
 fixed_field = string:name ws '(' size:size ')' ws '=' ws (range|value):val -> (name.strip(), size, val)
 opt_field = '[' (fixed_field|basic_field):x ']' -> (x + ('?',))
 rep_field = (fixed_field|basic_field):x ws '...' -> (x + ('...',))
@@ -37,6 +37,6 @@ field = (fixed_field
     | basic_field
     | opt_field):field ws ',' -> field
 
-packet = string:structure ws '{' 
+packet = ws string:structure ws '{' 
         (ws field)+:fields
-        ws '}' -> (structure.strip(), fields)
+        ws '}' ws -> new_struct(structure.strip(), fields)

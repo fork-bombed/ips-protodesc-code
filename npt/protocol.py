@@ -74,6 +74,12 @@ class Value(Trait):
             Function("set", [Parameter("self", TypeVariable("T")), Parameter("value", TypeVariable("T"))], Nothing())
         ])
 
+class VariableLengthInteger(Trait):
+    def __init__(self):
+        super().__init__("VariableLengthInteger", [
+            Function("decode", [Parameter("self", TypeVariable("T"))], TypeVariable("T"), Number()),
+            Function("encode", [Parameter("self", TypeVariable("T")), Parameter("value", TypeVariable("T"))], Nothing())
+        ])
 
 class Sized(Trait):
     def __init__(self):
@@ -416,6 +422,14 @@ class Option(RepresentableType, ConstructableType):
 
     def __init__(self, name: str, reference_type: RepresentableType) -> None:
         super().__init__(name=name, size=reference_type.size)
+        self.reference_type = reference_type
+
+
+class Repeated(RepresentableType, ConstructableType):
+    reference_type : List[RepresentableType]
+
+    def __init__(self, name: str, reference_type: List[RepresentableType]) -> None:
+        super().__init__(name=name)
         self.reference_type = reference_type
 
 

@@ -35,7 +35,7 @@ import npt.rfc as rfc
 import npt.protocol
 
 from npt.parser import Parser
-from typing     import cast, Optional, Union, List, Tuple
+from typing     import Any, cast, Optional, Union, List, Tuple
 
 def stem(phrase):
     if phrase[-1] == 's':
@@ -55,39 +55,43 @@ def valid_type_name_convertor(name):
     name = ' '.join(name.replace('\n',' ').split())
     return name.capitalize().replace(" ", "_").replace("-", "_")
 
+def int_to_bytes(x: int) -> bytes:
+    return x.to_bytes((x.bit_length() + 7) // 8, 'big')
+
 class QUICStructureParser(Parser):
     def __init__(self) -> None:
         super().__init__()
 
-    def new_field(self, full_label, short_label, options, size, units, value_constraint, is_present, is_array):
-        return {
-                "full_label": valid_field_name_convertor(full_label),
-                "options" : options, 
-                "size": size, 
-                "units": units, 
-                "value_constraint": value_constraint, 
-                "is_present": is_present, 
-                "is_array": is_array 
-                }
+    def variable_length_convertor(self, data: int) -> int:
+        '''
+        RFC9000 Appendix A.1
+        '''
+        byte_data = list(int_to_bytes(data))
+        v = byte_data[0] & 0x3f
+        for b in byte_data[1:]:
+            v = (v << 8) + b
+        return v
 
-    def new_this(self):
-        return ("this")
+    def get_struct(self, name: str) -> npt.protocol.Struct:
+        for struct in self.structs:
+            if name == struct.name:
+                return struct
 
-    def new_methodinvocation(self, target, method, arguments):
-        return("methodinvocation", target, method, arguments)
+    def new_field(self, name: str, size: Optional[npt.protocol.Expression], value: Optional[Any] = None) -> npt.protocol.StructField:
+        return npt.protocol.StructField(
+            field_name=valid_field_name_convertor(name),
+            field_type=npt.protocol.BitString(name=valid_field_name_convertor(name).capitalize(), size=size)
+        )
 
-    def new_fieldaccess(self, target, field_name):
-        return ("fieldaccess", target, field_name)
+    def new_struct(self, name: str, fields: List[npt.protocol.StructField]) -> npt.protocol.Struct:
+        return npt.protocol.Struct(name=valid_field_name_convertor(name).capitalize(), fields=fields, constraints=[], actions=[])
 
-    def new_constant(self, type_name, value):
-        return ("const", type_name, value)
+    def new_constant(self, value: Any) -> npt.protocol.ConstantExpression:
+        return npt.protocol.ConstantExpression(npt.protocol.Number, value)
 
     def build_parser(self):
-        self.structs = {}
-        self.enums = {}
-        self.functions = {}
-        self.serialise_to = {}
-        self.parse_from = {}
+        self.structs = []
+        self.enums = []
         with open("npt/grammar_quicstructures.txt") as grammarFile:
             return parsley.makeGrammar(grammarFile.read(),
                                    {
@@ -95,11 +99,30 @@ class QUICStructureParser(Parser):
                                      "ascii_lowercase"          : string.ascii_lowercase,
                                      "ascii_letters"            : string.ascii_letters,
                                      "punctuation"              : string.punctuation,
+                                     "new_field"                : self.new_field,
+                                     "new_struct"               : self.new_struct,
+                                     "new_constant"             : self.new_constant,
                                    })
 
-    def process_structure(self, structure: str):
-        pass
+    def process_structure(self, artwork: rfc.Artwork, parser):
+        try:
+            print(artwork.content.content)
+            structure = parser(artwork.content.content).packet()
+            print(structure)
+        except Exception as e:
+            print(f'{artwork.name} is not a structure')
 
+
+    def process_section(self, section: rfc.Section, parser):
+        for content in section.content:
+            if isinstance(content, rfc.Figure):
+                for artwork in content.content:
+                    if isinstance(artwork, rfc.Artwork):
+                        self.process_structure(artwork, parser)
+        for sub_section in section.sections:
+            self.process_section(sub_section, parser)
+
+        
     def build_protocol(self, proto: Optional[npt.protocol.Protocol], input: Union[str, rfc.RFC], name: str=None) -> npt.protocol.Protocol:
         """
         Build a Protocol object for the protocol represented by the input string.
@@ -113,4 +136,28 @@ class QUICStructureParser(Parser):
         Returns:
             A Protocol object
         """
-        pass
+        if proto is None:
+            self.proto = npt.protocol.Protocol()
+        else:
+            self.proto = proto
+
+        parser = self.build_parser()
+        structs : List[npt.protocol.Struct] = []
+
+        # TESTING PACKET PARSING
+        test_packet = '''
+        Example FRAME {
+            Basic Field (10),
+            Another Basic Field (10),
+        }
+        '''
+        structure: npt.protocol.Struct = parser(test_packet).packet()
+        for field in structure.fields.values():
+            print(field.field_name, field.field_type.size)
+
+        # if isinstance(input, rfc.RFC):
+        #     for section in input.middle.content:
+        #         self.process_section(section, parser)
+
+        self.proto.set_protocol_name('QUIC')
+        return self.proto
