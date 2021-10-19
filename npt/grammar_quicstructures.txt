@@ -13,7 +13,7 @@ hex = '0x' <hexchar+>:chars -> '0x'+chars
 value = hex:x -> int(x, 0)
     | number
 
-range = value:first dots value:last -> (first,last)
+range = value:first dots value:last -> (new_constant(first), new_constant(last))
 
 arblen = dots -> '?'
 varlen = value:first dots value:last -> (first, last)
@@ -27,8 +27,11 @@ size = varlen
     | 'i' -> new_constant(-1)
     | value:val -> new_constant(val)
 
+fixed_value = range
+    | value:val -> new_constant(val)
+
 basic_field = string:name ws '(' size:size ')' -> new_field(name.strip(), size)
-fixed_field = string:name ws '(' size:size ')' ws '=' ws (range|value):val -> (name.strip(), size, val)
+fixed_field = string:name ws '(' size:size ')' ws '=' ws fixed_value:val -> new_field(name.strip(), size, FixedField(val))
 opt_field = '[' (fixed_field|basic_field):x ']' -> (x + ('?',))
 rep_field = (fixed_field|basic_field):x ws '...' -> (x + ('...',))
 

@@ -162,7 +162,10 @@ def main():
             }
 
     opt = npt.util.read_usr_opts(sys.argv[1:])
-    dom_parser = dom_parsers.get(opt.parser_fmt, 'asciidiagram')
+    if opt.parser_fmt is not None:
+        dom_parser = dom_parsers.get(opt.parser_fmt)
+    else:
+        dom_parser = AsciiDiagramsParser()
     for idx, doc in enumerate(opt.infiles):
         parsed_content = parse_input_file( doc )
         if parsed_content is None :
@@ -170,7 +173,8 @@ def main():
             print(f"Error : Parsing {doc.get_filepath_in()} -> container = {doc}")
             continue
 
-        protocol = dom_parser.build_protocol(  None , parsed_content )
+        if dom_parser is not None:
+            protocol = dom_parser.build_protocol(  None , parsed_content )
 
         try:
             protocol.synthesise()

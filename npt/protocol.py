@@ -74,17 +74,18 @@ class Value(Trait):
             Function("set", [Parameter("self", TypeVariable("T")), Parameter("value", TypeVariable("T"))], Nothing())
         ])
 
-class VariableLengthInteger(Trait):
-    def __init__(self):
-        super().__init__("VariableLengthInteger", [
-            Function("decode", [Parameter("self", TypeVariable("T"))], TypeVariable("T"), Number()),
-            Function("encode", [Parameter("self", TypeVariable("T")), Parameter("value", TypeVariable("T"))], Nothing())
-        ])
 
 class Sized(Trait):
     def __init__(self):
         super().__init__("Sized", [
             Function("size", [Parameter("self", TypeVariable("T"))], Number())
+        ])
+
+
+class VariableLengthEncoded(Trait):
+    def __init__(self):
+        super().__init__("VariableLengthEncoded", [
+            Function("decode", [Parameter("self", TypeVariable("T"))], Number())
         ])
 
 

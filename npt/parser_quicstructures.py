@@ -37,6 +37,9 @@ import npt.protocol
 from npt.parser import Parser
 from typing     import Any, cast, Optional, Union, List, Tuple
 
+from abc         import ABC, abstractmethod
+from dataclasses import Field, dataclass, field
+
 def stem(phrase):
     if phrase[-1] == 's':
         return phrase[:-1]
@@ -58,11 +61,7 @@ def valid_type_name_convertor(name):
 def int_to_bytes(x: int) -> bytes:
     return x.to_bytes((x.bit_length() + 7) // 8, 'big')
 
-class QUICStructureParser(Parser):
-    def __init__(self) -> None:
-        super().__init__()
-
-    def variable_length_convertor(self, data: int) -> int:
+def variable_length_convertor(self, data: int) -> int:
         '''
         RFC9000 Appendix A.1
         '''
@@ -72,45 +71,132 @@ class QUICStructureParser(Parser):
             v = (v << 8) + b
         return v
 
-    def get_struct(self, name: str) -> npt.protocol.Struct:
+
+class FieldType(ABC):
+    '''
+    Base class to simplify field constraints
+    '''
+    @abstractmethod
+    def generate_constraints(self, field: npt.protocol.StructField) -> List[npt.protocol.MethodInvocationExpression]:
+        ''' Abstract class, all field types must generate corresponding constraints '''
+
+
+@dataclass(frozen=True)
+class SimpleConstraint:
+    def to_number(self, field: npt.protocol.StructField) -> npt.protocol.MethodInvocationExpression:
+        return npt.protocol.MethodInvocationExpression(
+                npt.protocol.FieldAccessExpression(npt.protocol.SelfExpression(), field.field_name), 
+                'to_number', 
+                []
+        )
+
+    def argument(self, expression: npt.protocol.Expression) -> npt.protocol.ArgumentExpression:
+        return npt.protocol.ArgumentExpression(
+                'other', 
+                expression
+        )
+
+
+@dataclass(frozen=True)
+class FixedField(FieldType, SimpleConstraint):
+    value: Union[npt.protocol.Expression, tuple]
+
+    def generate_constraints(self, field: npt.protocol.StructField) -> List[npt.protocol.MethodInvocationExpression]:
+        if isinstance(self.value, npt.protocol.Expression):
+            return [
+                npt.protocol.MethodInvocationExpression(
+                    super().to_number(field),
+                    'eq',
+                    [super().argument(self.value)]
+                )
+            ]
+        else:
+            return [
+                npt.protocol.MethodInvocationExpression(
+                    npt.protocol.MethodInvocationExpression(
+                        super().to_number(field),
+                        'ge',
+                        [super().argument(self.value[0])]
+                    ),
+                    'and',
+                    [
+                        super().argument(
+                            npt.protocol.MethodInvocationExpression(
+                                super().to_number(field),
+                                'le',
+                                [super().argument(self.value[1])]
+                            )
+                        )
+                    ]
+                )
+            ]
+
+@dataclass
+class FieldWrapper:
+    '''
+    Wrapper for holding fields with corresponding constraints
+    '''
+    field: npt.protocol.StructField
+    constraints: Optional[List[npt.protocol.MethodInvocationExpression]]
+    
+
+class QUICStructureParser(Parser):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def get_struct(self, name: str) -> Optional[npt.protocol.Struct]:
         for struct in self.structs:
             if name == struct.name:
                 return struct
+        return None
 
-    def new_field(self, name: str, size: Optional[npt.protocol.Expression], value: Optional[Any] = None) -> npt.protocol.StructField:
-        return npt.protocol.StructField(
-            field_name=valid_field_name_convertor(name),
-            field_type=npt.protocol.BitString(name=valid_field_name_convertor(name).capitalize(), size=size)
+    def new_field(self, name: str, size: Optional[npt.protocol.Expression], constraints: Optional[FieldType] = None) -> npt.protocol.StructField:
+        field = npt.protocol.StructField(
+                field_name = valid_field_name_convertor(name),
+                field_type = npt.protocol.BitString(
+                        # Temporary naming, will be replaced when field is built
+                        name = 'T'+valid_field_name_convertor(name),
+                        size = size
+                )
+        )
+        field_constraints = None
+        if constraints is not None:
+            field_constraints = constraints.generate_constraints(field)
+        return FieldWrapper(field, field_constraints)
+
+    def new_struct(self, name: str, wrapped_fields: List[FieldWrapper]) -> npt.protocol.Struct:
+        constraints = []
+        for field in wrapped_fields:
+            if field.constraints is not None:
+                constraints += field.constraints
+        return npt.protocol.Struct(
+                name        = valid_field_name_convertor(name).capitalize(),
+                fields      = [x.field for x in wrapped_fields], 
+                constraints = constraints, 
+                actions     = []
         )
 
-    def new_struct(self, name: str, fields: List[npt.protocol.StructField]) -> npt.protocol.Struct:
-        return npt.protocol.Struct(name=valid_field_name_convertor(name).capitalize(), fields=fields, constraints=[], actions=[])
-
     def new_constant(self, value: Any) -> npt.protocol.ConstantExpression:
-        return npt.protocol.ConstantExpression(npt.protocol.Number, value)
+        return npt.protocol.ConstantExpression(npt.protocol.Number(), value)
 
     def build_parser(self):
-        self.structs = []
+        self.structs: List[npt.protocol.Struct] = []
         self.enums = []
         with open("npt/grammar_quicstructures.txt") as grammarFile:
             return parsley.makeGrammar(grammarFile.read(),
                                    {
-                                     "ascii_uppercase"          : string.ascii_uppercase,
-                                     "ascii_lowercase"          : string.ascii_lowercase,
-                                     "ascii_letters"            : string.ascii_letters,
-                                     "punctuation"              : string.punctuation,
                                      "new_field"                : self.new_field,
                                      "new_struct"               : self.new_struct,
                                      "new_constant"             : self.new_constant,
+                                     "FixedField"               : FixedField
                                    })
 
     def process_structure(self, artwork: rfc.Artwork, parser):
-        try:
-            print(artwork.content.content)
-            structure = parser(artwork.content.content).packet()
-            print(structure)
-        except Exception as e:
-            print(f'{artwork.name} is not a structure')
+        if type(artwork.content) is rfc.Text:
+            try:
+                structure = parser(artwork.content.content).packet()
+            except Exception as e:
+                print(f'{artwork.name} is not a structure')
 
 
     def process_section(self, section: rfc.Section, parser):
@@ -119,8 +205,9 @@ class QUICStructureParser(Parser):
                 for artwork in content.content:
                     if isinstance(artwork, rfc.Artwork):
                         self.process_structure(artwork, parser)
-        for sub_section in section.sections:
-            self.process_section(sub_section, parser)
+        if section.sections is not None:
+            for sub_section in section.sections:
+                self.process_section(sub_section, parser)
 
         
     def build_protocol(self, proto: Optional[npt.protocol.Protocol], input: Union[str, rfc.RFC], name: str=None) -> npt.protocol.Protocol:
@@ -149,11 +236,16 @@ class QUICStructureParser(Parser):
         Example FRAME {
             Basic Field (10),
             Another Basic Field (10),
+            Fixed Field (8) = 1..5,
         }
         '''
         structure: npt.protocol.Struct = parser(test_packet).packet()
+        print(structure)
         for field in structure.fields.values():
-            print(field.field_name, field.field_type.size)
+            print(f'Field ({field.field_name})')
+        
+        for constraint in structure.constraints:
+            print(f'Constraint ({constraint})')
 
         # if isinstance(input, rfc.RFC):
         #     for section in input.middle.content:
