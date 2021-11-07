@@ -166,9 +166,16 @@ class QUICStructureParser(Parser):
 
     def new_struct(self, name: str, wrapped_fields: List[FieldWrapper]) -> npt.protocol.Struct:
         constraints = []
+        fields = []
+        struct_name = valid_field_name_convertor(name).capitalize()
         for field in wrapped_fields:
             if field.constraints is not None:
                 constraints += field.constraints
+            field_type = field.field.field_type
+            if isinstance(field_type, npt.protocol.BitString):
+                # Update temporary naming to include structure name
+                field_type.name = f'{struct_name}_{field_type.name[1:]}'
+                fields.append(field.field)
         return npt.protocol.Struct(
                 name        = valid_field_name_convertor(name).capitalize(),
                 fields      = [x.field for x in wrapped_fields], 
@@ -243,9 +250,12 @@ class QUICStructureParser(Parser):
         print(structure)
         for field in structure.fields.values():
             print(f'Field ({field.field_name})')
+            print(f'\tBitstring ({field.field_type.name})')
         
         for constraint in structure.constraints:
             print(f'Constraint ({constraint})')
+
+        self.structs.append(structure)
 
         # if isinstance(input, rfc.RFC):
         #     for section in input.middle.content:
