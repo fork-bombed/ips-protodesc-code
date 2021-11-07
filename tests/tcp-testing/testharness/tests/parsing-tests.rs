@@ -1,7 +1,7 @@
-extern crate draft_mcquistin_augmented_tcp_example_00;
+extern crate draft_mcquistin_augmented_tcp_example_02;
 extern crate pcap;
 
-use draft_mcquistin_augmented_tcp_example_00::*;
+use draft_mcquistin_augmented_tcp_example_02::*;
 use pcap::Capture;
 
 fn pretty_print_tcp_header(header: &TcpHeader) {
@@ -14,7 +14,8 @@ fn pretty_print_tcp_header(header: &TcpHeader) {
                 TcpOption::MaximumSegmentSizeOption(opt) => options.push(format!("MSS({:?})", opt.maximum_segment_size.0).to_string()),
                 TcpOption::WindowScaleFactorOption(opt) => options.push(format!("WinScale({:?})", opt.window_scale_factor.0).to_string()),
                 TcpOption::TimestampOption(opt) => options.push(format!("Timestamp(TSVal: {:?}, TSecr: {:?})", opt.timestamp_value.0, opt.timestamp_echo_reply.0).to_string()),
-                TcpOption::SackPermittedOption(_opt) => options.push("SACKPermitted".to_string())
+                TcpOption::SackPermittedOption(_opt) => options.push("SACKPermitted".to_string()),
+                TcpOption::SackRangeOption(_opt) => options.push("SACKRange".to_string())
             }
         }
     }
