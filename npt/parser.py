@@ -69,33 +69,6 @@ class Range:
 class FieldType:
     name: str
 
-
-@dataclass
-class Field(FieldType):
-    size: Union[int, Range]
-    value: Optional[Any]
-
-    def __str__(self):
-        val = f', value={self.value or None}'
-        return f'Field(name={self.name}, size={self.size}{val if self.value else ""})'
-
-
-@dataclass
-class RepeatingField(FieldType):
-    target: FieldType
-
-    def __str__(self):
-        return f'RepeatingField({self.target})'
-
-
-@dataclass
-class OptionalField(FieldType):
-    target: FieldType
-
-    def __str__(self):
-        return f'OptionalField({self.target})'
-
-
 @dataclass
 class Structure:
     name: str
@@ -108,11 +81,37 @@ class Structure:
 
 @dataclass
 class StructContainer(FieldType):
+    size: Union[int, Range]
     target: Structure
 
     def __str__(self):
-        return f'Type(name={self.name}, target=Structure({self.target.name}))'
+        return f'StructContainer(name={self.name}, size={self.size}, target=Structure({self.target.name}))'
 
+
+@dataclass
+class Field(FieldType):
+    size: Union[int, Range]
+    value: Optional[Any]
+
+    def __str__(self):
+        val = f', value={self.value if self.value is not None else None}'
+        return f'Field(name={self.name}, size={self.size}{val if self.value is not None else ""})'
+
+
+@dataclass
+class RepeatingField(FieldType):
+    target: Union[Field, StructContainer]
+
+    def __str__(self):
+        return f'RepeatingField({self.target})'
+
+
+@dataclass
+class OptionalField(FieldType):
+    target: Union[Field, StructContainer]
+
+    def __str__(self):
+        return f'OptionalField({self.target})'
 
 # ==== Parsed Representation ====
 
@@ -183,11 +182,12 @@ class ParsedRepresentation:
     def _get_struct_container(self, field: FieldType, structs: List[Structure]) -> Optional[FieldType]:
         for struct in structs:
             if struct.name == field.name:
-                container = StructContainer(field.name, struct)
-                if isinstance(field, OptionalField):
-                    container = OptionalField(field.name, container)
+                if isinstance(field, Field):
+                    container = StructContainer(field.name, field.size, struct)
+                elif isinstance(field, OptionalField):
+                    container = OptionalField(field.name, StructContainer(field.target.name, field.target.size, struct))
                 elif isinstance(field, RepeatingField):
-                    container = RepeatingField(field.name, container)
+                    container = RepeatingField(field.name, StructContainer(field.target.name, field.target.size, struct))
                 return container
 
     def generate_representation(self, document: Union[str, rfc.RFC], parser) -> List[Structure]:

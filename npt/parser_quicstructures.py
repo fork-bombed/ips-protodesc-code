@@ -236,38 +236,12 @@ class QUICStructureParser(Parser):
         else:
             self.proto = proto
 
-        # parser = self.build_parser()
-        # structs : List[npt.protocol.Struct] = []
-
-        # # TESTING PACKET PARSING
-        # test_packet = '''
-        # Example FRAME {
-        #     Basic Field (10),
-        #     Another Basic Field (10),
-        #     Fixed Field (8) = 1..5,
-        # }
-        # '''
-        # structure: npt.protocol.Struct = parser(test_packet).packet()
-        # print(structure)
-        # for field in structure.fields.values():
-        #     print(f'Field ({field.field_name})')
-        #     print(f'\tBitstring ({field.field_type.name})')
-        
-        # for constraint in structure.constraints:
-        #     print(f'Constraint ({constraint})')
-
-        # self.structs.append(structure)
-
         quic_representation = ParsedRepresentation()
         parser = quic_representation.build_grammar('npt/grammar_quicstructures.txt')
 
         structs = quic_representation.generate_representation(input, parser)
-        for struct in structs:
+        for struct in structs[1:]:
             print(struct)
-
-        # if isinstance(input, rfc.RFC):
-        #     for section in input.middle.content:
-        #         self.process_section(section, parser)
 
         self.proto.set_protocol_name('QUIC')
         return self.proto
