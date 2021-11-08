@@ -34,7 +34,7 @@ import parsley
 import npt.rfc as rfc
 import npt.protocol
 
-from npt.parser import Parser
+from npt.parser import Parser, ParsedRepresentation
 from typing     import Any, cast, Optional, Union, List, Tuple
 
 from abc         import ABC, abstractmethod
@@ -202,8 +202,9 @@ class QUICStructureParser(Parser):
         if type(artwork.content) is rfc.Text:
             try:
                 structure = parser(artwork.content.content).packet()
+                print(structure)
             except Exception as e:
-                print(f'{artwork.name} is not a structure')
+                print(e)
 
 
     def process_section(self, section: rfc.Section, parser):
@@ -235,27 +236,34 @@ class QUICStructureParser(Parser):
         else:
             self.proto = proto
 
-        parser = self.build_parser()
-        structs : List[npt.protocol.Struct] = []
+        # parser = self.build_parser()
+        # structs : List[npt.protocol.Struct] = []
 
-        # TESTING PACKET PARSING
-        test_packet = '''
-        Example FRAME {
-            Basic Field (10),
-            Another Basic Field (10),
-            Fixed Field (8) = 1..5,
-        }
-        '''
-        structure: npt.protocol.Struct = parser(test_packet).packet()
-        print(structure)
-        for field in structure.fields.values():
-            print(f'Field ({field.field_name})')
-            print(f'\tBitstring ({field.field_type.name})')
+        # # TESTING PACKET PARSING
+        # test_packet = '''
+        # Example FRAME {
+        #     Basic Field (10),
+        #     Another Basic Field (10),
+        #     Fixed Field (8) = 1..5,
+        # }
+        # '''
+        # structure: npt.protocol.Struct = parser(test_packet).packet()
+        # print(structure)
+        # for field in structure.fields.values():
+        #     print(f'Field ({field.field_name})')
+        #     print(f'\tBitstring ({field.field_type.name})')
         
-        for constraint in structure.constraints:
-            print(f'Constraint ({constraint})')
+        # for constraint in structure.constraints:
+        #     print(f'Constraint ({constraint})')
 
-        self.structs.append(structure)
+        # self.structs.append(structure)
+
+        quic_representation = ParsedRepresentation()
+        parser = quic_representation.build_grammar('npt/grammar_quicstructures.txt')
+
+        structs = quic_representation.generate_representation(input, parser)
+        for struct in structs:
+            print(struct)
 
         # if isinstance(input, rfc.RFC):
         #     for section in input.middle.content:

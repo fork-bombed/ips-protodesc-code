@@ -144,7 +144,7 @@ def main():
             "rust"   : RustFormatter()
             }
     # Load the output formatter:
-    formatter : Formatter = output_formatter.get(args.format)
+    formatter : Optional[Formatter] = output_formatter.get(args.format)
     if formatter is None:
         print(f"Error: cannot load output formatter {args.format}")
         return 1

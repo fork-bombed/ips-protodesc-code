@@ -13,27 +13,27 @@ hex = '0x' <hexchar+>:chars -> '0x'+chars
 value = hex:x -> int(x, 0)
     | number
 
-range = value:first dots value:last -> (new_constant(first), new_constant(last))
+range = value:first dots value:last -> new_range(first, last)
 
-arblen = dots -> '?'
-varlen = value:first dots value:last -> (first, last)
-minval = value:min dots -> (min, '?')
-maxval = dots value:max -> ('0', max)
+arblen = dots -> new_range()
+varlen = value:first dots value:last -> new_range(first, last)
+minval = value:min dots -> new_range(min)
+maxval = dots value:max -> new_range(max=max)
 
 size = varlen
     | minval
     | maxval
     | arblen
-    | 'i' -> new_constant(-1)
-    | value:val -> new_constant(val)
+    | 'i'
+    | value
 
 fixed_value = range
-    | value:val -> new_constant(val)
+    | value
 
 basic_field = string:name ws '(' size:size ')' -> new_field(name.strip(), size)
-fixed_field = string:name ws '(' size:size ')' ws '=' ws fixed_value:val -> new_field(name.strip(), size, FixedField(val))
-opt_field = '[' (fixed_field|basic_field):x ']' -> (x + ('?',))
-rep_field = (fixed_field|basic_field):x ws '...' -> (x + ('...',))
+fixed_field = string:name ws '(' size:size ')' ws '=' ws fixed_value:val -> new_field(name.strip(), size, val)
+opt_field = '[' (fixed_field|basic_field):field ']' -> new_optional_field(field)
+rep_field = (fixed_field|basic_field):field ws '...' -> new_repeating_field(field)
 
 field = (fixed_field
     | rep_field
