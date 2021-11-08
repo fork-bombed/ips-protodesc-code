@@ -182,6 +182,7 @@ class ParsedRepresentation:
     def _get_struct_container(self, field: FieldType, structs: List[Structure]) -> Optional[FieldType]:
         for struct in structs:
             if struct.name == field.name:
+                container: FieldType
                 if isinstance(field, Field):
                     container = StructContainer(field.name, field.size, struct)
                 elif isinstance(field, OptionalField):
@@ -189,6 +190,7 @@ class ParsedRepresentation:
                 elif isinstance(field, RepeatingField):
                     container = RepeatingField(field.name, StructContainer(field.target.name, field.target.size, struct))
                 return container
+        return None
 
     def generate_representation(self, document: Union[str, rfc.RFC], parser) -> List[Structure]:
         structs: List[Structure] = self._parse_structures(document, parser)

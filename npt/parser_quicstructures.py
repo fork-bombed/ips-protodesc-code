@@ -150,7 +150,7 @@ class QUICStructureParser(Parser):
                 return struct
         return None
 
-    def new_field(self, name: str, size: Optional[npt.protocol.Expression], constraints: Optional[FieldType] = None) -> npt.protocol.StructField:
+    def new_field(self, name: str, size: Optional[npt.protocol.Expression], constraints: Optional[FieldType] = None) -> FieldWrapper:
         field = npt.protocol.StructField(
                 field_name = valid_field_name_convertor(name),
                 field_type = npt.protocol.BitString(
@@ -165,7 +165,7 @@ class QUICStructureParser(Parser):
         return FieldWrapper(field, field_constraints)
 
     def new_struct(self, name: str, wrapped_fields: List[FieldWrapper]) -> npt.protocol.Struct:
-        constraints = []
+        constraints: List[npt.protocol.Expression] = []
         fields = []
         struct_name = valid_field_name_convertor(name).capitalize()
         for field in wrapped_fields:
