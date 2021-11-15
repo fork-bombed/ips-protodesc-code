@@ -34,11 +34,11 @@ import parsley
 import npt.rfc as rfc
 import npt.protocol
 
-from npt.parser import Parser, ParsedRepresentation
+import npt.parser
 from typing     import Any, cast, Optional, Union, List, Tuple
 
 from abc         import ABC, abstractmethod
-from dataclasses import Field, dataclass, field
+from dataclasses import Field, dataclass
 
 def stem(phrase):
     if phrase[-1] == 's':
@@ -48,7 +48,7 @@ def stem(phrase):
 
 def valid_field_name_convertor(name):
     if name is not None:
-        return name.lower().replace(" ", "_")
+        return name.lower().replace(" ", "_").replace("-","_")
     else:
         return None
 
@@ -140,15 +140,9 @@ class FieldWrapper:
     constraints: Optional[List[npt.protocol.MethodInvocationExpression]]
     
 
-class QUICStructureParser(Parser):
+class QUICStructureParser(npt.parser.Parser):
     def __init__(self) -> None:
         super().__init__()
-
-    def get_struct(self, name: str) -> Optional[npt.protocol.Struct]:
-        for struct in self.structs:
-            if name == struct.name:
-                return struct
-        return None
 
     def new_field(self, name: str, size: Optional[npt.protocol.Expression], constraints: Optional[FieldType] = None) -> FieldWrapper:
         field = npt.protocol.StructField(
@@ -186,38 +180,64 @@ class QUICStructureParser(Parser):
     def new_constant(self, value: Any) -> npt.protocol.ConstantExpression:
         return npt.protocol.ConstantExpression(npt.protocol.Number(), value)
 
-    def build_parser(self):
-        self.structs: List[npt.protocol.Struct] = []
-        self.enums = []
-        with open("npt/grammar_quicstructures.txt") as grammarFile:
-            return parsley.makeGrammar(grammarFile.read(),
-                                   {
-                                     "new_field"                : self.new_field,
-                                     "new_struct"               : self.new_struct,
-                                     "new_constant"             : self.new_constant,
-                                     "FixedField"               : FixedField
-                                   })
+    def _process_field(self, struct: npt.parser.Structure, field: npt.parser.Field) -> npt.protocol.StructField:
+        field_name = valid_field_name_convertor(field.name)
+        struct_name = valid_type_name_convertor(struct.name)
+        bitstring_name = f'{struct_name}_{field_name}'
+        size = field.size
+        if isinstance(field.size, npt.parser.Range):
+            size = 1337
+        if field.size == 'i':
+            size = 8000
+        field_type = npt.protocol.BitString(
+                name = bitstring_name,
+                size = npt.protocol.ConstantExpression(npt.protocol.Number(), size)
+        )
+        self.proto.add_type(field_type)
+        struct_field = npt.protocol.StructField(
+                field_name = field_name,
+                field_type = field_type
+        )
+        return struct_field
 
-    def process_structure(self, artwork: rfc.Artwork, parser):
-        if type(artwork.content) is rfc.Text:
-            try:
-                structure = parser(artwork.content.content).packet()
-                print(structure)
-            except Exception as e:
-                print(e)
+    def _traverse_field(self, struct: npt.parser.Structure, field: Union[npt.parser.FieldType, npt.parser.StructContainer]) -> npt.protocol.StructField:
+        if isinstance(field, npt.parser.Field):
+            struct_field = self._process_field(struct, field)
+            return struct_field
+        if isinstance(field, npt.parser.StructContainer):
+            temp = npt.parser.Field(field.name, field.size, None)
+            struct_field = self._process_field(struct, temp)
+            return struct_field
+        if isinstance(field, npt.parser.RepeatingField) or isinstance(field, npt.parser.OptionalField):
+            if isinstance(field.target, npt.parser.Field):
+                temp = npt.parser.Field(field.target.name, field.target.size, field.target.value)
+                struct_field = self._process_field(struct, temp)
+            else:
+                struct_field = self._traverse_field(struct, field.target)
+            return struct_field
 
+    def _process_structure(self, struct: npt.parser.Structure) -> npt.protocol.Struct:
+        fields = []
+        for field in struct.fields:
+            fields.append(self._traverse_field(struct, field))
+        return npt.protocol.Struct(
+                name        = valid_type_name_convertor(struct.name),
+                fields      = fields, 
+                constraints = [], 
+                actions     = []
+        )
 
-    def process_section(self, section: rfc.Section, parser):
-        for content in section.content:
-            if isinstance(content, rfc.Figure):
-                for artwork in content.content:
-                    if isinstance(artwork, rfc.Artwork):
-                        self.process_structure(artwork, parser)
-        if section.sections is not None:
-            for sub_section in section.sections:
-                self.process_section(sub_section, parser)
+    def process_parsed_representation(self, representation: npt.parser.ParsedRepresentation) -> List[npt.protocol.Struct]:
+        structures: List[npt.protocol.Struct] = []
+        for struct in representation.structs:
+            structure = self._process_structure(struct)
+            if structure is not None:
+                structures.append(structure)
+            else:
+                # TODO: custom exceptions for failures
+                print(f'Failed to convert {struct.name} to internal structure')
+        return structures
 
-        
     def build_protocol(self, proto: Optional[npt.protocol.Protocol], input: Union[str, rfc.RFC], name: str=None) -> npt.protocol.Protocol:
         """
         Build a Protocol object for the protocol represented by the input string.
@@ -236,12 +256,11 @@ class QUICStructureParser(Parser):
         else:
             self.proto = proto
 
-        quic_representation = ParsedRepresentation()
-        parser = quic_representation.build_grammar('npt/grammar_quicstructures.txt')
-
-        structs = quic_representation.generate_representation(input, parser)
-        for struct in structs[1:]:
-            print(struct)
-
-        self.proto.set_protocol_name('QUIC')
+        quic_representation = npt.parser.ParsedRepresentation(input, 'npt/grammar_quicstructures.txt')
+        quic_representation.remove_struct('Example Structure')
+        structures: List[npt.protocol.Struct] = self.process_parsed_representation(quic_representation)
+        for struct in structures:
+            self.proto.add_type(struct)
+            self.proto.define_pdu(valid_type_name_convertor(struct.name))
+        self.proto.set_protocol_name(quic_representation.name)
         return self.proto

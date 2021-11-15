@@ -62,7 +62,7 @@ class Range:
     max: Optional[int]
 
     def __str__(self):
-        return f'Range({self.min or ""}..{self.max or ""})'
+        return f'Range({self.min if self.min is not None else ""}..{self.max if self.max is not None else ""})'
 
 
 @dataclass
@@ -113,12 +113,22 @@ class OptionalField(FieldType):
     def __str__(self):
         return f'OptionalField({self.target})'
 
+
 # ==== Parsed Representation ====
 
 
 class ParsedRepresentation:
-    def __init__(self, structs: List[Structure] = []):
-        self.structs = structs
+    def __init__(self, document: Union[str, rfc.RFC], grammar_filename: str) -> None:
+        self.parser = self.build_grammar(grammar_filename)
+        self.name, self.structs = self.generate_representation(document, self.parser)
+
+    def add_struct(self, struct: Structure) -> None:
+        self.structs.append(struct)
+
+    def remove_struct(self, struct_name: str) -> None:
+        for struct in self.structs:
+            if struct.name == struct_name:
+                self.structs.remove(struct)
 
     def new_struct(self, struct_name: str, fields: List[Field]) -> Structure:
         return Structure(struct_name, fields)
@@ -147,10 +157,22 @@ class ParsedRepresentation:
             # Combine the parser bindings and user-defined bindings
             return parsley.makeGrammar(grammarFile.read(),{**parser_bindings,**bindings})
 
+    def _get_protocol_name(self, document: Union[str, rfc.RFC]) -> str:
+        if isinstance(document, rfc.RFC):
+            title = document.front.title
+            if title.content is not None:
+                if title.content.content is not None:
+                    if ':' in title.content.content:
+                        return title.content.content.split(':')[0]
+            elif title.abbrev is not None:
+                return title.abbrev
+        # TODO: Fix this for str documents
+        return 'Something'
+
     def _process_structure(self, artwork: rfc.Artwork, parser):
         if type(artwork.content) is rfc.Text:
             try:
-                return parser(artwork.content.content).packet()
+                return parser(artwork.content.content).structure()
             except Exception as e:
                 pass
 
@@ -192,8 +214,9 @@ class ParsedRepresentation:
                 return container
         return None
 
-    def generate_representation(self, document: Union[str, rfc.RFC], parser) -> List[Structure]:
+    def generate_representation(self, document: Union[str, rfc.RFC], parser) -> Tuple[str, List[Structure]]:
         structs: List[Structure] = self._parse_structures(document, parser)
+        protocol_name: str = self._get_protocol_name(document)
         for struct in structs:
             fields = []
             for field in struct.fields:
@@ -206,4 +229,4 @@ class ParsedRepresentation:
                 else:
                     fields.append(field)
             struct.fields = fields
-        return structs
+        return protocol_name, structs

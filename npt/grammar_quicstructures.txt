@@ -40,6 +40,6 @@ field = (fixed_field
     | basic_field
     | opt_field):field ws ',' -> field
 
-packet = ws string:structure ws '{' 
+structure = ws string:name ws '{' 
         (ws field)+:fields
-        ws '}' ws -> new_struct(structure.strip(), fields)
+        ws '}' ws -> new_struct(name.strip(), fields)
