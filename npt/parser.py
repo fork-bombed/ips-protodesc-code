@@ -118,7 +118,7 @@ class OptionalField(FieldType):
 
 
 class ParsedRepresentation:
-    def __init__(self, document: Union[str, rfc.RFC], grammar_filename: str) -> None:
+    def __init__(self, document: rfc.RFC, grammar_filename: str) -> None:
         self.parser = self.build_grammar(grammar_filename)
         self.name, self.structs = self.generate_representation(document, self.parser)
 
@@ -157,17 +157,14 @@ class ParsedRepresentation:
             # Combine the parser bindings and user-defined bindings
             return parsley.makeGrammar(grammarFile.read(),{**parser_bindings,**bindings})
 
-    def _get_protocol_name(self, document: Union[str, rfc.RFC]) -> str:
-        if isinstance(document, rfc.RFC):
-            title = document.front.title
-            if title.content is not None:
-                if title.content.content is not None:
-                    if ':' in title.content.content:
-                        return title.content.content.split(':')[0]
-            elif title.abbrev is not None:
-                return title.abbrev
-        # TODO: Fix this for str documents
-        return 'Something'
+    def _get_protocol_name(self, document: rfc.RFC) -> str:
+        title = document.front.title
+        if title.content is not None:
+            if title.content.content is not None:
+                if ':' in title.content.content:
+                    return title.content.content.split(':')[0]
+        elif title.abbrev is not None:
+            return title.abbrev
 
     def _process_structure(self, artwork: rfc.Artwork, parser):
         if type(artwork.content) is rfc.Text:
@@ -214,7 +211,7 @@ class ParsedRepresentation:
                 return container
         return None
 
-    def generate_representation(self, document: Union[str, rfc.RFC], parser) -> Tuple[str, List[Structure]]:
+    def generate_representation(self, document: rfc.RFC, parser) -> Tuple[str, List[Structure]]:
         structs: List[Structure] = self._parse_structures(document, parser)
         protocol_name: str = self._get_protocol_name(document)
         for struct in structs:

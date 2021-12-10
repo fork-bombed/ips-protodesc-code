@@ -38,7 +38,7 @@ import npt.parser
 from typing     import Any, cast, Optional, Union, List, Tuple
 
 from abc         import ABC, abstractmethod
-from dataclasses import Field, dataclass
+from dataclasses import dataclass
 
 def stem(phrase):
     if phrase[-1] == 's':
@@ -131,6 +131,7 @@ class FixedField(FieldType, SimpleConstraint):
                 )
             ]
 
+
 @dataclass
 class FieldWrapper:
     '''
@@ -144,66 +145,33 @@ class QUICStructureParser(npt.parser.Parser):
     def __init__(self) -> None:
         super().__init__()
 
-    def new_field(self, name: str, size: Optional[npt.protocol.Expression], constraints: Optional[FieldType] = None) -> FieldWrapper:
-        field = npt.protocol.StructField(
-                field_name = valid_field_name_convertor(name),
-                field_type = npt.protocol.BitString(
-                        # Temporary naming, will be replaced when field is built
-                        name = 'T'+valid_field_name_convertor(name),
-                        size = size
-                )
-        )
-        field_constraints = None
-        if constraints is not None:
-            field_constraints = constraints.generate_constraints(field)
-        return FieldWrapper(field, field_constraints)
-
-    def new_struct(self, name: str, wrapped_fields: List[FieldWrapper]) -> npt.protocol.Struct:
-        constraints: List[npt.protocol.Expression] = []
-        fields = []
-        struct_name = valid_field_name_convertor(name).capitalize()
-        for field in wrapped_fields:
-            if field.constraints is not None:
-                constraints += field.constraints
-            field_type = field.field.field_type
-            if isinstance(field_type, npt.protocol.BitString):
-                # Update temporary naming to include structure name
-                field_type.name = f'{struct_name}_{field_type.name[1:]}'
-                fields.append(field.field)
-        return npt.protocol.Struct(
-                name        = valid_field_name_convertor(name).capitalize(),
-                fields      = [x.field for x in wrapped_fields], 
-                constraints = constraints, 
-                actions     = []
-        )
-
-    def new_constant(self, value: Any) -> npt.protocol.ConstantExpression:
-        return npt.protocol.ConstantExpression(npt.protocol.Number(), value)
-
     def _process_field(self, struct: npt.parser.Structure, field: npt.parser.Field) -> npt.protocol.StructField:
         field_name = valid_field_name_convertor(field.name)
         struct_name = valid_type_name_convertor(struct.name)
         bitstring_name = f'{struct_name}_{field_name}'
         size = field.size
+        # Temporarily handle arbitrary and range fields
         if isinstance(field.size, npt.parser.Range):
             size = 1337
+        # Temporarily handle variable length encoded fields
         if field.size == 'i':
             size = 8000
         field_type = npt.protocol.BitString(
                 name = bitstring_name,
                 size = npt.protocol.ConstantExpression(npt.protocol.Number(), size)
         )
-        self.proto.add_type(field_type)
         struct_field = npt.protocol.StructField(
                 field_name = field_name,
                 field_type = field_type
         )
+        self.proto.add_type(field_type)
         return struct_field
 
     def _traverse_field(self, struct: npt.parser.Structure, field: Union[npt.parser.FieldType, npt.parser.StructContainer]) -> npt.protocol.StructField:
         if isinstance(field, npt.parser.Field):
             struct_field = self._process_field(struct, field)
             return struct_field
+        # TODO: Handle container fields
         if isinstance(field, npt.parser.StructContainer):
             temp = npt.parser.Field(field.name, field.size, None)
             struct_field = self._process_field(struct, temp)
@@ -223,7 +191,7 @@ class QUICStructureParser(npt.parser.Parser):
         return npt.protocol.Struct(
                 name        = valid_type_name_convertor(struct.name),
                 fields      = fields, 
-                constraints = [], 
+                constraints = [],
                 actions     = []
         )
 
