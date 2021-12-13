@@ -29,7 +29,7 @@
 # =================================================================================================
 
 import abc
-from typing       import List, Tuple, Optional, Any, Union
+from typing       import cast, List, Tuple, Optional, Any, Union
 from dataclasses import dataclass
 import npt.protocol
 import parsley
@@ -118,7 +118,7 @@ class Map:
 
 @dataclass
 class StructContainer(FieldType):
-    size: Union[int, Range]
+    size: Union[int, str, Range]
     target: Structure
 
     def __str__(self):
@@ -127,7 +127,7 @@ class StructContainer(FieldType):
 
 @dataclass
 class Field(FieldType):
-    size: Union[int, Range]
+    size: Union[int, str, Range]
     value: Optional[Any]
 
     def __str__(self):
@@ -189,7 +189,7 @@ class ParsedRepresentation:
         self.structs: List[Structure] = []
         self.enums: List[Enum] = []
         self.maps: List[Map] = []
-        self.name: str = None
+        self.name: str = ""
         self.generate_representation(document, self.parser)
 
     def add_struct(self, struct: Structure) -> None:
@@ -233,15 +233,15 @@ class ParsedRepresentation:
             if title.content.content is not None:
                 if ':' in title.content.content:
                     return title.content.content.split(':')[0]
-        elif title.abbrev is not None:
-            return title.abbrev
+        return None
 
     def _process_structure(self, artwork: rfc.Artwork, parser) -> Optional[Structure]:
         if type(artwork.content) is rfc.Text:
             try:
-                return parser(artwork.content.content).structure()
+                return cast(Structure, parser(artwork.content.content).structure())
             except Exception as e:
                 pass
+        return None
 
     def _verify_enum_value(self, value: str) -> Optional[int]:
         # Use first value for any ranges
@@ -273,7 +273,7 @@ class ParsedRepresentation:
         # Assume that all Enums contain [value, name] in first
         # two columns. This means we only have to retrieve the
         # first two in order to create an enum. Same with Maps.
-        name: str = None
+        name: str = ""
         table_matrix = []
         if table.name is not None:
             if table.name.content is not None:
@@ -285,7 +285,9 @@ class ParsedRepresentation:
                 if tr.content is not None:
                     for th in tr.content:
                         for text in th.content:
-                            heading.append(text.content)
+                            if isinstance(text, rfc.Text) and text.content is not None:
+                                if isinstance(text.content, str):
+                                    heading.append(text.content)
                 table_matrix.append(heading[:2])
         if table.tbodies is not None:
             for tbody in table.tbodies:
@@ -295,15 +297,16 @@ class ParsedRepresentation:
                         for td in tr.content:
                             if td.content is not None:
                                 for text in td.content:
-                                    if text.content is not None:
-                                        body.append(text.content)
+                                    if isinstance(text, rfc.Text) and text.content is not None:
+                                        if isinstance(text.content, str):
+                                            body.append(text.content)
                         table_matrix.append(body[:2])
         values = self._parse_table_content(table_matrix)
         if values is not None:
             if all(isinstance(val, MapValue) for val in values):
-                return Map(name, values)
+                return Map(name, cast(List[MapValue], values))
             else:
-                return Enum(name, values)
+                return Enum(name, cast(List[EnumValue],values))
         return None
 
 
@@ -312,7 +315,7 @@ class ParsedRepresentation:
             if isinstance(content, rfc.Figure):
                 for artwork in content.content:
                     if isinstance(artwork, rfc.Artwork):
-                        struct: Structure = self._process_structure(artwork, parser)
+                        struct = self._process_structure(artwork, parser)
                         if struct is not None:
                             self.structs.append(struct)
             elif isinstance(content, rfc.Table):
@@ -326,7 +329,7 @@ class ParsedRepresentation:
             for sub_section in section.sections:
                 self._process_section(sub_section, parser)
 
-    def _parse_structures(self, document: Union[str, rfc.RFC], parser) -> None:
+    def _parse_structures(self, document: rfc.RFC, parser) -> None:
         if isinstance(document, rfc.RFC):
             for section in document.middle.content:
                 self._process_section(section, parser)
@@ -348,7 +351,7 @@ class ParsedRepresentation:
         self._parse_structures(document, parser)
         if self.structs is None:
             raise Exception('No structures to represent')
-        protocol_name: str = self._get_protocol_name(document)
+        protocol_name = self._get_protocol_name(document)
         if protocol_name is not None:
             self.name = protocol_name
         for struct in self.structs:

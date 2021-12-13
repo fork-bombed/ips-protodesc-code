@@ -170,19 +170,18 @@ class QUICStructureParser(npt.parser.Parser):
     def _traverse_field(self, struct: npt.parser.Structure, field: Union[npt.parser.FieldType, npt.parser.StructContainer]) -> npt.protocol.StructField:
         if isinstance(field, npt.parser.Field):
             struct_field = self._process_field(struct, field)
-            return struct_field
         # TODO: Handle container fields
         if isinstance(field, npt.parser.StructContainer):
             temp = npt.parser.Field(field.name, field.size, None)
             struct_field = self._process_field(struct, temp)
-            return struct_field
         if isinstance(field, npt.parser.RepeatingField) or isinstance(field, npt.parser.OptionalField):
             if isinstance(field.target, npt.parser.Field):
                 temp = npt.parser.Field(field.target.name, field.target.size, field.target.value)
                 struct_field = self._process_field(struct, temp)
             else:
                 struct_field = self._traverse_field(struct, field.target)
-            return struct_field
+        return struct_field
+        
 
     def _process_structure(self, struct: npt.parser.Structure) -> npt.protocol.Struct:
         fields = []
@@ -206,9 +205,6 @@ class QUICStructureParser(npt.parser.Parser):
             structure = self._process_structure(struct)
             if structure is not None:
                 structures.append(structure)
-            else:
-                # TODO: custom exceptions for failures
-                print(f'Failed to convert {struct.name} to internal structure')
         for enum in representation.enums:
             pass
             # TODO: Handle converted enums
@@ -232,7 +228,7 @@ class QUICStructureParser(npt.parser.Parser):
         else:
             self.proto = proto
 
-        quic_representation = npt.parser.ParsedRepresentation(input, 'npt/grammar_quicstructures.txt')
+        quic_representation = npt.parser.ParsedRepresentation(cast(rfc.RFC,input), 'npt/grammar_quicstructures.txt')
         quic_representation.remove_struct('Example Structure')
         structures: List[npt.protocol.Struct] = self.process_parsed_representation(quic_representation)
         for struct in structures:
