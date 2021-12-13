@@ -29,7 +29,7 @@
 # =================================================================================================
 
 import abc
-from typing       import Dict, List, Tuple, Optional, Any, Union
+from typing       import List, Tuple, Optional, Any, Union
 from dataclasses import dataclass
 import npt.protocol
 import parsley
@@ -78,6 +78,43 @@ class Structure:
         fields = '\n\t'.join([str(field) for field in self.fields])
         return f'Structure(name={self.name}, fields=\n\t{fields}\n)'
 
+@dataclass
+class EnumValue:
+    name: str
+    value: Any
+
+    def __str__(self):
+        return f'EnumValue(name={self.name}, value={self.value})'
+
+
+@dataclass
+class Enum:
+    name: str
+    values: List[EnumValue]
+
+    def __str__(self):
+        enumvalues = '\n\t'.join([str(value) for value in self.values])
+        return f'Enum(name={self.name}, values=\n\t{enumvalues}\n)'
+
+
+@dataclass
+class MapValue:
+    key: int
+    value: int
+
+    def __str__(self):
+        return f'MapValue(key={self.key}, value={self.value})'
+
+
+@dataclass
+class Map:
+    name: str
+    values: List[MapValue]
+
+    def __str__(self):
+        mapvalues = '\n\t'.join([str(value) for value in self.values])
+        return f'Map(name={self.name}, values=\n\t{mapvalues}\n)'
+
 
 @dataclass
 class StructContainer(FieldType):
@@ -114,13 +151,46 @@ class OptionalField(FieldType):
         return f'OptionalField({self.target})'
 
 
-# ==== Parsed Representation ====
+# =======================================================================================
+# Parsed Representation boundaries
+#
+# The parsed representation is used to convert raw data into objects using 
+# the Parsley grammar file. This provides a consistent representation across 
+# all parsers without imposing any restrictions on the data. The representation 
+# is used to increase readability by splitting the parsing and internal 
+# representation into clear steps, making it easier to spot any repetition or 
+# inefficient code, and increasing the overall modularity of the program. Anything
+# that will end up in the internal representation (e.g structures and enums) should 
+# be converted to the parsed representation before being sent to the internal 
+# representation. The internal representation should be modified to accept a 
+# ParsedRepresentation object which will contain all the necessary data to convert 
+# into a protocol object.
+#
+# The parsed representation is simply used to represent data from the parser. It is 
+# an intermediate step to ensure that we have all the information before it is type
+# checked and converted into the internal representation. This means that the data 
+# in the parsed representation does not necessarily need to be correct, as it will be 
+# checked when it is converted to the internal representation. Below is a list of 
+# actions that can be done by the parsed representation:
+#   - Order data
+#   - Make links between data
+#   - Add or remove data
+#
+# Below is a list of actions the parsed representation cannot do:
+#   - Enforce naming conventions
+#   - Type checking
+#   - Input validation
+# =======================================================================================
 
 
 class ParsedRepresentation:
     def __init__(self, document: rfc.RFC, grammar_filename: str) -> None:
         self.parser = self.build_grammar(grammar_filename)
-        self.name, self.structs = self.generate_representation(document, self.parser)
+        self.structs: List[Structure] = []
+        self.enums: List[Enum] = []
+        self.maps: List[Map] = []
+        self.name: str = None
+        self.generate_representation(document, self.parser)
 
     def add_struct(self, struct: Structure) -> None:
         self.structs.append(struct)
@@ -157,7 +227,7 @@ class ParsedRepresentation:
             # Combine the parser bindings and user-defined bindings
             return parsley.makeGrammar(grammarFile.read(),{**parser_bindings,**bindings})
 
-    def _get_protocol_name(self, document: rfc.RFC) -> str:
+    def _get_protocol_name(self, document: rfc.RFC) -> Optional[str]:
         title = document.front.title
         if title.content is not None:
             if title.content.content is not None:
@@ -166,40 +236,103 @@ class ParsedRepresentation:
         elif title.abbrev is not None:
             return title.abbrev
 
-    def _process_structure(self, artwork: rfc.Artwork, parser):
+    def _process_structure(self, artwork: rfc.Artwork, parser) -> Optional[Structure]:
         if type(artwork.content) is rfc.Text:
             try:
                 return parser(artwork.content.content).structure()
             except Exception as e:
                 pass
 
-    def _process_section(self, section: rfc.Section, parser) -> List[Structure]:
-        structs: List[Structure] = []
+    def _verify_enum_value(self, value: str) -> Optional[int]:
+        # Use first value for any ranges
+        if '-' in value:
+            value = value.split('-')[0]
+        if value.isnumeric():
+            return int(value)
+        elif value.startswith('0x'):
+            return int(value, base=16)
+        return None
+
+    def _parse_table_content(self, table: list) -> Optional[List[Union[MapValue,EnumValue]]]:
+        body = table[1:]
+        table_content: List[Union[MapValue, EnumValue]] = []
+        for item in body:
+            value, name = item
+            value = self._verify_enum_value(value)
+            if value is None:
+                return None
+            elif name.isnumeric():
+                # Maps should be [value, key] but are 
+                # represented key -> value
+                table_content.append(MapValue(key=value, value=int(name)))
+            else:
+                table_content.append(EnumValue(name, value))
+        return table_content
+
+    def _process_table(self, table: rfc.Table) -> Optional[Union[Enum, Map]]:
+        # Assume that all Enums contain [value, name] in first
+        # two columns. This means we only have to retrieve the
+        # first two in order to create an enum. Same with Maps.
+        name: str = None
+        table_matrix = []
+        if table.name is not None:
+            if table.name.content is not None:
+                if isinstance(table.name.content[0], rfc.Text):
+                    name = table.name.content[0].content
+        if table.thead is not None:
+            for tr in table.thead.content:
+                heading: List[str] = []
+                if tr.content is not None:
+                    for th in tr.content:
+                        for text in th.content:
+                            heading.append(text.content)
+                table_matrix.append(heading[:2])
+        if table.tbodies is not None:
+            for tbody in table.tbodies:
+                for tr in tbody.content:
+                    body: List[str] = []
+                    if tr.content is not None:
+                        for td in tr.content:
+                            if td.content is not None:
+                                for text in td.content:
+                                    if text.content is not None:
+                                        body.append(text.content)
+                        table_matrix.append(body[:2])
+        values = self._parse_table_content(table_matrix)
+        if values is not None:
+            if all(isinstance(val, MapValue) for val in values):
+                return Map(name, values)
+            else:
+                return Enum(name, values)
+        return None
+
+
+    def _process_section(self, section: rfc.Section, parser) -> None:
         for content in section.content:
             if isinstance(content, rfc.Figure):
                 for artwork in content.content:
                     if isinstance(artwork, rfc.Artwork):
-                        struct = self._process_structure(artwork, parser)
+                        struct: Structure = self._process_structure(artwork, parser)
                         if struct is not None:
-                            structs.append(struct)
+                            self.structs.append(struct)
+            elif isinstance(content, rfc.Table):
+                table = self._process_table(content)
+                if table is not None:
+                    if isinstance(table, Map):
+                        self.maps.append(table)
+                    elif isinstance(table, Enum):
+                        self.enums.append(table)
         if section.sections is not None:
             for sub_section in section.sections:
-                section_structs = self._process_section(sub_section, parser)
-                if section_structs is not None:
-                    structs += section_structs
-        return structs
+                self._process_section(sub_section, parser)
 
-    def _parse_structures(self, document: Union[str, rfc.RFC], parser) -> List[Structure]:
-        structs: List[Structure] = []
+    def _parse_structures(self, document: Union[str, rfc.RFC], parser) -> None:
         if isinstance(document, rfc.RFC):
             for section in document.middle.content:
-                section_struct = self._process_section(section, parser)
-                if section_struct is not None:
-                    structs += section_struct
-        return structs
+                self._process_section(section, parser)
 
-    def _get_struct_container(self, field: FieldType, structs: List[Structure]) -> Optional[FieldType]:
-        for struct in structs:
+    def _get_struct_container(self, field: FieldType) -> Optional[FieldType]:
+        for struct in self.structs:
             if struct.name == field.name:
                 container: FieldType
                 if isinstance(field, Field):
@@ -211,14 +344,18 @@ class ParsedRepresentation:
                 return container
         return None
 
-    def generate_representation(self, document: rfc.RFC, parser) -> Tuple[str, List[Structure]]:
-        structs: List[Structure] = self._parse_structures(document, parser)
+    def generate_representation(self, document: rfc.RFC, parser) -> None:
+        self._parse_structures(document, parser)
+        if self.structs is None:
+            raise Exception('No structures to represent')
         protocol_name: str = self._get_protocol_name(document)
-        for struct in structs:
+        if protocol_name is not None:
+            self.name = protocol_name
+        for struct in self.structs:
             fields = []
             for field in struct.fields:
                 if isinstance(field, FieldType):
-                    container = self._get_struct_container(field, structs)
+                    container = self._get_struct_container(field)
                     if container is not None:
                         fields.append(container)
                     else:
@@ -226,4 +363,10 @@ class ParsedRepresentation:
                 else:
                     fields.append(field)
             struct.fields = fields
-        return protocol_name, structs
+
+    def __str__(self):
+        enums = '\n'.join([str(value) for value in self.enums])
+        maps = '\n'.join([str(value) for value in self.maps])
+        structs = '\n'.join([str(value) for value in self.structs])
+        return f'ParsedRepresentation(name={self.name}):\n{enums}\n{maps}\n{structs}'
+        

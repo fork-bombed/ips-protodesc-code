@@ -190,13 +190,18 @@ class QUICStructureParser(npt.parser.Parser):
             fields.append(self._traverse_field(struct, field))
         return npt.protocol.Struct(
                 name        = valid_type_name_convertor(struct.name),
-                fields      = fields, 
+                fields      = fields,
                 constraints = [],
                 actions     = []
         )
 
+    def _process_enum(self, enum: npt.parser.Enum) -> npt.protocol.Enum:
+        pass
+        # TODO: Handle conversion of Enums
+
     def process_parsed_representation(self, representation: npt.parser.ParsedRepresentation) -> List[npt.protocol.Struct]:
         structures: List[npt.protocol.Struct] = []
+        enums: List[npt.protocol.Enum] = []
         for struct in representation.structs:
             structure = self._process_structure(struct)
             if structure is not None:
@@ -204,6 +209,9 @@ class QUICStructureParser(npt.parser.Parser):
             else:
                 # TODO: custom exceptions for failures
                 print(f'Failed to convert {struct.name} to internal structure')
+        for enum in representation.enums:
+            pass
+            # TODO: Handle converted enums
         return structures
 
     def build_protocol(self, proto: Optional[npt.protocol.Protocol], input: Union[str, rfc.RFC], name: str=None) -> npt.protocol.Protocol:
