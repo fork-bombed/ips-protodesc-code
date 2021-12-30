@@ -161,7 +161,6 @@ class QUICStructureParser(npt.parser.Parser):
             else:
                 struct_field, struct_constraints = self._traverse_field(struct, field.target)
         return struct_field, struct_constraints
-        
 
     def _process_structure(self, struct: npt.parser.Structure) -> npt.protocol.Struct:
         fields = []

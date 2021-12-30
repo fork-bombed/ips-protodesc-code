@@ -82,13 +82,6 @@ class Sized(Trait):
         ])
 
 
-class VariableLengthEncoded(Trait):
-    def __init__(self):
-        super().__init__("VariableLengthEncoded", [
-            Function("decode", [Parameter("self", TypeVariable("T"))], Number())
-        ])
-
-
 class IndexCollection(Trait):
     def __init__(self):
         super().__init__("IndexCollection", [
