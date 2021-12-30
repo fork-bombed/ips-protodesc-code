@@ -72,8 +72,6 @@ where:
     - *simple*  : a textual representation of the parsed IETF specification
     - *rust* : a rust protocol parser.
 
-                        formats are simple,rust
- ```
 
 *Example Usage*
 ```
