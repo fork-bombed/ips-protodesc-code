@@ -73,3 +73,14 @@ class Test_Parsed_Representation(unittest.TestCase):
         '''
         parsed_struct = self.parsed_representation.parser(txt_struct).structure()
         self.assertEqual(parsed_struct, struct)
+
+    def _verify_example_structure(self, struct: Structure):
+        self.assertEqual(struct.name, 'Example Structure')
+
+    def test_quic_structures(self):
+        structs = self.parsed_representation.structs
+        self.assertEqual(len(self.parsed_representation.structs), 36)
+
+        self._verify_example_structure(structs[0])
+        
+
