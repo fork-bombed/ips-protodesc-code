@@ -35,6 +35,8 @@ fixed_field = string:name ws '(' size:size ')' ws '=' ws fixed_value:val -> new_
 opt_field = '[' (fixed_field|basic_field):field ']' -> new_optional_field(field)
 rep_field = (fixed_field|basic_field):field ws '...' -> new_repeating_field(field)
 
+enum_field = string:type ws ',' -> new_enum_value(type.strip())
+
 field = (fixed_field
     | rep_field
     | basic_field
@@ -43,3 +45,7 @@ field = (fixed_field
 structure = ws string:name ws '{' 
         (ws field)+:fields
         ws '}' ws -> new_struct(name.strip(), fields)
+
+enum = ws string:name ws '{'
+        (ws enum_field)+:values
+        ws '}' ws -> new_enum(name.strip(), values)

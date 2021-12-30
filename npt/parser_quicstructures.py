@@ -48,6 +48,8 @@ def stem(phrase):
 
 def valid_field_name_convertor(name):
     if name is not None:
+        if name[0].isdigit():
+            name = "F" + name
         return name.lower().replace(" ", "_").replace("-","_")
     else:
         return None
@@ -61,95 +63,72 @@ def valid_type_name_convertor(name):
 def int_to_bytes(x: int) -> bytes:
     return x.to_bytes((x.bit_length() + 7) // 8, 'big')
 
-def variable_length_convertor(self, data: int) -> int:
-        '''
-        RFC9000 Appendix A.1
-        '''
-        byte_data = list(int_to_bytes(data))
-        v = byte_data[0] & 0x3f
-        for b in byte_data[1:]:
-            v = (v << 8) + b
-        return v
 
+class QUICStructureParser(npt.parser.Parser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.structs = {}
+        self.enums = {}
 
-class FieldType(ABC):
-    '''
-    Base class to simplify field constraints
-    '''
-    @abstractmethod
-    def generate_constraints(self, field: npt.protocol.StructField) -> List[npt.protocol.MethodInvocationExpression]:
-        ''' Abstract class, all field types must generate corresponding constraints '''
-
-
-@dataclass(frozen=True)
-class SimpleConstraint:
-    def to_number(self, field: npt.protocol.StructField) -> npt.protocol.MethodInvocationExpression:
+    def _to_number_expression(self, field: npt.protocol.StructField) -> npt.protocol.MethodInvocationExpression:
         return npt.protocol.MethodInvocationExpression(
                 npt.protocol.FieldAccessExpression(npt.protocol.SelfExpression(), field.field_name), 
                 'to_number', 
                 []
         )
 
-    def argument(self, expression: npt.protocol.Expression) -> npt.protocol.ArgumentExpression:
+    def _argument_expression(self, expression: npt.protocol.Expression) -> npt.protocol.ArgumentExpression:
         return npt.protocol.ArgumentExpression(
                 'other', 
                 expression
         )
 
+    def _const_expression(self, number: int) -> npt.protocol.ConstantExpression:
+        return npt.protocol.ConstantExpression(npt.protocol.Number(), number)
 
-@dataclass(frozen=True)
-class FixedField(FieldType, SimpleConstraint):
-    value: Union[npt.protocol.Expression, tuple]
-
-    def generate_constraints(self, field: npt.protocol.StructField) -> List[npt.protocol.MethodInvocationExpression]:
-        if isinstance(self.value, npt.protocol.Expression):
+    def _process_field_value(self, struct_field: npt.protocol.StructField, value: Union[int, npt.parser.Range]) -> Optional[List[npt.protocol.MethodInvocationExpression]]:
+        if value is None: return
+        if isinstance(value, int):
+            const_expr = self._const_expression(value)
             return [
                 npt.protocol.MethodInvocationExpression(
-                    super().to_number(field),
+                    self._to_number_expression(struct_field),
                     'eq',
-                    [super().argument(self.value)]
+                    [self._argument_expression(const_expr)]
+                )
+            ]
+        elif isinstance(value, npt.parser.Range):
+            if value.max is None: return
+            minval = value.min or 0
+            maxval = value.max
+            min_expr = self._const_expression(minval)
+            max_expr = self._const_expression(maxval)
+            ge_expr = npt.protocol.MethodInvocationExpression(
+                        self._to_number_expression(struct_field),
+                        'ge',
+                        [self._argument_expression(min_expr)]
+                    )
+            le_expr = npt.protocol.MethodInvocationExpression(
+                        self._to_number_expression(struct_field),
+                        'le',
+                        [self._argument_expression(max_expr)]
+                    )
+            return [
+                npt.protocol.MethodInvocationExpression(
+                    ge_expr,
+                    'and',
+                    [self._argument_expression(le_expr)]
                 )
             ]
         else:
-            return [
-                npt.protocol.MethodInvocationExpression(
-                    npt.protocol.MethodInvocationExpression(
-                        super().to_number(field),
-                        'ge',
-                        [super().argument(self.value[0])]
-                    ),
-                    'and',
-                    [
-                        super().argument(
-                            npt.protocol.MethodInvocationExpression(
-                                super().to_number(field),
-                                'le',
-                                [super().argument(self.value[1])]
-                            )
-                        )
-                    ]
-                )
-            ]
-
-
-@dataclass
-class FieldWrapper:
-    '''
-    Wrapper for holding fields with corresponding constraints
-    '''
-    field: npt.protocol.StructField
-    constraints: Optional[List[npt.protocol.MethodInvocationExpression]]
-    
-
-class QUICStructureParser(npt.parser.Parser):
-    def __init__(self) -> None:
-        super().__init__()
+            return
 
     def _process_field(self, struct: npt.parser.Structure, field: npt.parser.Field) -> npt.protocol.StructField:
         field_name = valid_field_name_convertor(field.name)
         struct_name = valid_type_name_convertor(struct.name)
         bitstring_name = f'{struct_name}_{field_name}'
         size = field.size
+        value = field.value
         # Temporarily handle arbitrary and range fields
         if isinstance(field.size, npt.parser.Range):
             size = 1337
@@ -164,51 +143,63 @@ class QUICStructureParser(npt.parser.Parser):
                 field_name = field_name,
                 field_type = field_type
         )
+        struct_constraints = self._process_field_value(struct_field, value)
         self.proto.add_type(field_type)
-        return struct_field
+        return struct_field, struct_constraints
 
     def _traverse_field(self, struct: npt.parser.Structure, field: Union[npt.parser.FieldType, npt.parser.StructContainer]) -> npt.protocol.StructField:
         if isinstance(field, npt.parser.Field):
-            struct_field = self._process_field(struct, field)
+            struct_field, struct_constraints = self._process_field(struct, field)
         # TODO: Handle container fields
         if isinstance(field, npt.parser.StructContainer):
             temp = npt.parser.Field(field.name, field.size, None)
-            struct_field = self._process_field(struct, temp)
+            struct_field, struct_constraints = self._process_field(struct, temp)
         if isinstance(field, npt.parser.RepeatingField) or isinstance(field, npt.parser.OptionalField):
             if isinstance(field.target, npt.parser.Field):
                 temp = npt.parser.Field(field.target.name, field.target.size, field.target.value)
-                struct_field = self._process_field(struct, temp)
+                struct_field, struct_constraints = self._process_field(struct, temp)
             else:
-                struct_field = self._traverse_field(struct, field.target)
-        return struct_field
+                struct_field, struct_constraints = self._traverse_field(struct, field.target)
+        return struct_field, struct_constraints
         
 
     def _process_structure(self, struct: npt.parser.Structure) -> npt.protocol.Struct:
         fields = []
+        constraints = []
         for field in struct.fields:
-            fields.append(self._traverse_field(struct, field))
+            field_type, field_constraints = self._traverse_field(struct, field)
+            fields.append(field_type)
+            if field_constraints is not None:
+                constraints += field_constraints
         return npt.protocol.Struct(
                 name        = valid_type_name_convertor(struct.name),
                 fields      = fields,
-                constraints = [],
+                constraints = constraints,
                 actions     = []
         )
 
     def _process_enum(self, enum: npt.parser.Enum) -> npt.protocol.Enum:
-        pass
-        # TODO: Handle conversion of Enums
+        variants = []
+        for value in enum.values:
+            if value.type is None:
+                raise npt.protocol.ProtocolTypeError("Enum must point to a type")
+            type_name = valid_type_name_convertor(value.type.name)
+            variant = self.structs.get(type_name)
+            if variant is not None:
+                variants.append(variant)
+        return npt.protocol.Enum(valid_type_name_convertor(enum.name), variants)
 
-    def process_parsed_representation(self, representation: npt.parser.ParsedRepresentation) -> List[npt.protocol.Struct]:
-        structures: List[npt.protocol.Struct] = []
-        enums: List[npt.protocol.Enum] = []
+    def process_parsed_representation(self, representation: npt.parser.ParsedRepresentation) -> None:
         for struct in representation.structs:
-            structure = self._process_structure(struct)
-            if structure is not None:
-                structures.append(structure)
+            processed_struct = self._process_structure(struct)
+            if processed_struct is not None:
+                self.structs[processed_struct.name] = processed_struct
+                self.proto.add_type(processed_struct)
         for enum in representation.enums:
-            pass
-            # TODO: Handle converted enums
-        return structures
+            processed_enum = self._process_enum(enum)
+            if processed_enum is not None:
+                self.enums[processed_enum.name] = processed_enum
+                self.proto.add_type(processed_enum)
 
     def build_protocol(self, proto: Optional[npt.protocol.Protocol], input: Union[str, rfc.RFC], name: str=None) -> npt.protocol.Protocol:
         """
@@ -229,10 +220,10 @@ class QUICStructureParser(npt.parser.Parser):
             self.proto = proto
 
         quic_representation = npt.parser.ParsedRepresentation(cast(rfc.RFC,input), 'npt/grammar_quicstructures.txt')
-        quic_representation.remove_struct('Example Structure')
-        structures: List[npt.protocol.Struct] = self.process_parsed_representation(quic_representation)
-        for struct in structures:
-            self.proto.add_type(struct)
-            self.proto.define_pdu(valid_type_name_convertor(struct.name))
         self.proto.set_protocol_name(quic_representation.name)
+        self.process_parsed_representation(quic_representation)
+        for struct in self.structs.values():
+            self.proto.define_pdu(valid_type_name_convertor(struct.name))
+        for struct in self.enums.values():
+            self.proto.define_pdu(valid_type_name_convertor(struct.name))
         return self.proto

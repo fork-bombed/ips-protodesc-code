@@ -80,6 +80,10 @@ class RustFormatter(Formatter):
             return f"({target} >= {arg_exprs[0]})"
         elif method_name == "gt":
             return f"({target} > {arg_exprs[0]})"
+        elif method_name == "le":
+            return f"({target} <= {arg_exprs[0]})"
+        elif method_name == "lt":
+            return f"({target} < {arg_exprs[0]})"
         elif method_name == "eq":
             return f"({target} == {arg_exprs[0]})"
         elif method_name == "ne":

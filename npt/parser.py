@@ -29,7 +29,7 @@
 # =================================================================================================
 
 import abc
-from typing       import cast, List, Tuple, Optional, Any, Union
+from typing       import cast, List, Tuple, Dict, Optional, Any, Union
 from dataclasses import dataclass
 import npt.protocol
 import parsley
@@ -81,10 +81,13 @@ class Structure:
 @dataclass
 class EnumValue:
     name: str
-    value: Any
+    type: Optional[Structure] = None
 
     def __str__(self):
-        return f'EnumValue(name={self.name}, value={self.value})'
+        typed = ''
+        if self.type is not None:
+            typed = f', type={self.type.name}'
+        return f'EnumValue(name={self.name}{typed})'
 
 
 @dataclass
@@ -95,25 +98,6 @@ class Enum:
     def __str__(self):
         enumvalues = '\n\t'.join([str(value) for value in self.values])
         return f'Enum(name={self.name}, values=\n\t{enumvalues}\n)'
-
-
-@dataclass
-class MapValue:
-    key: int
-    value: int
-
-    def __str__(self):
-        return f'MapValue(key={self.key}, value={self.value})'
-
-
-@dataclass
-class Map:
-    name: str
-    values: List[MapValue]
-
-    def __str__(self):
-        mapvalues = '\n\t'.join([str(value) for value in self.values])
-        return f'Map(name={self.name}, values=\n\t{mapvalues}\n)'
 
 
 @dataclass
@@ -188,17 +172,28 @@ class ParsedRepresentation:
         self.parser = self.build_grammar(grammar_filename)
         self.structs: List[Structure] = []
         self.enums: List[Enum] = []
-        self.maps: List[Map] = []
         self.name: str = ""
         self.generate_representation(document, self.parser)
 
     def add_struct(self, struct: Structure) -> None:
         self.structs.append(struct)
 
+    def find_struct(self, struct_name: str) -> Optional[Structure]:
+        for struct in self.structs:
+            if struct.name == struct_name:
+                return struct
+        return None
+
     def remove_struct(self, struct_name: str) -> None:
         for struct in self.structs:
             if struct.name == struct_name:
                 self.structs.remove(struct)
+
+    def new_enum(self, enum_name: str, fields: List[EnumValue]) -> Enum:
+        return Enum(enum_name, fields)
+
+    def new_enum_value(self, value_name: str) -> EnumValue:
+        return EnumValue(value_name)
 
     def new_struct(self, struct_name: str, fields: List[Field]) -> Structure:
         return Structure(struct_name, fields)
@@ -222,6 +217,8 @@ class ParsedRepresentation:
             'new_struct'            : self.new_struct,
             'new_optional_field'    : self.new_optional_field,
             'new_repeating_field'   : self.new_repeating_field,
+            'new_enum'              : self.new_enum,
+            'new_enum_value'        : self.new_enum_value,
         }
         with open(filename) as grammarFile:
             # Combine the parser bindings and user-defined bindings
@@ -235,79 +232,83 @@ class ParsedRepresentation:
                     return title.content.content.split(':')[0]
         return None
 
-    def _process_structure(self, artwork: rfc.Artwork, parser) -> Optional[Structure]:
+    def _process_structure(self, artwork: rfc.Artwork, parser) -> Optional[Union[Structure, Enum]]:
         if type(artwork.content) is rfc.Text:
             try:
                 return cast(Structure, parser(artwork.content.content).structure())
-            except Exception as e:
+            except parsley.ParseError as e:
+                pass
+            try:
+                return cast(Enum, parser(artwork.content.content).enum())
+            except parsley.ParseError as e:
                 pass
         return None
 
-    def _verify_enum_value(self, value: str) -> Optional[int]:
-        # Use first value for any ranges
-        if '-' in value:
-            value = value.split('-')[0]
-        if value.isnumeric():
-            return int(value)
-        elif value.startswith('0x'):
-            return int(value, base=16)
-        return None
+    # def _verify_enum_value(self, value: str) -> Optional[int]:
+    #     # Use first value for any ranges
+    #     if '-' in value:
+    #         value = value.split('-')[0]
+    #     if value.isnumeric():
+    #         return int(value)
+    #     elif value.startswith('0x'):
+    #         return int(value, base=16)
+    #     return None
 
-    def _parse_table_content(self, table: list) -> Optional[List[Union[MapValue,EnumValue]]]:
-        body = table[1:]
-        table_content: List[Union[MapValue, EnumValue]] = []
-        for item in body:
-            value, name = item
-            value = self._verify_enum_value(value)
-            if value is None:
-                return None
-            elif name.isnumeric():
-                # Maps should be [value, key] but are 
-                # represented key -> value
-                table_content.append(MapValue(key=value, value=int(name)))
-            else:
-                table_content.append(EnumValue(name, value))
-        return table_content
+    # def _parse_table_content(self, table: list) -> Optional[List[Union[MapValue,EnumValue]]]:
+    #     body = table[1:]
+    #     table_content: List[Union[MapValue, EnumValue]] = []
+    #     for item in body:
+    #         value, name = item
+    #         value = self._verify_enum_value(value)
+    #         if value is None:
+    #             return None
+    #         elif name.isnumeric():
+    #             # Maps should be [value, key] but are 
+    #             # represented key -> value
+    #             table_content.append(MapValue(key=value, value=int(name)))
+    #         else:
+    #             table_content.append(EnumValue(name, value))
+    #     return table_content
 
-    def _process_table(self, table: rfc.Table) -> Optional[Union[Enum, Map]]:
-        # Assume that all Enums contain [value, name] in first
-        # two columns. This means we only have to retrieve the
-        # first two in order to create an enum. Same with Maps.
-        name: str = ""
-        table_matrix = []
-        if table.name is not None:
-            if table.name.content is not None:
-                if isinstance(table.name.content[0], rfc.Text):
-                    name = table.name.content[0].content
-        if table.thead is not None:
-            for tr in table.thead.content:
-                heading: List[str] = []
-                if tr.content is not None:
-                    for th in tr.content:
-                        for text in th.content:
-                            if isinstance(text, rfc.Text) and text.content is not None:
-                                if isinstance(text.content, str):
-                                    heading.append(text.content)
-                table_matrix.append(heading[:2])
-        if table.tbodies is not None:
-            for tbody in table.tbodies:
-                for tr in tbody.content:
-                    body: List[str] = []
-                    if tr.content is not None:
-                        for td in tr.content:
-                            if td.content is not None:
-                                for text in td.content:
-                                    if isinstance(text, rfc.Text) and text.content is not None:
-                                        if isinstance(text.content, str):
-                                            body.append(text.content)
-                        table_matrix.append(body[:2])
-        values = self._parse_table_content(table_matrix)
-        if values is not None:
-            if all(isinstance(val, MapValue) for val in values):
-                return Map(name, cast(List[MapValue], values))
-            else:
-                return Enum(name, cast(List[EnumValue],values))
-        return None
+    # def _process_table(self, table: rfc.Table) -> Optional[Union[Enum, Map]]:
+    #     # Assume that all Enums contain [value, name] in first
+    #     # two columns. This means we only have to retrieve the
+    #     # first two in order to create an enum. Same with Maps.
+    #     name: str = ""
+    #     table_matrix = []
+    #     if table.name is not None:
+    #         if table.name.content is not None:
+    #             if isinstance(table.name.content[0], rfc.Text):
+    #                 name = table.name.content[0].content
+    #     if table.thead is not None:
+    #         for tr in table.thead.content:
+    #             heading: List[str] = []
+    #             if tr.content is not None:
+    #                 for th in tr.content:
+    #                     for text in th.content:
+    #                         if isinstance(text, rfc.Text) and text.content is not None:
+    #                             if isinstance(text.content, str):
+    #                                 heading.append(text.content)
+    #             table_matrix.append(heading[:2])
+    #     if table.tbodies is not None:
+    #         for tbody in table.tbodies:
+    #             for tr in tbody.content:
+    #                 body: List[str] = []
+    #                 if tr.content is not None:
+    #                     for td in tr.content:
+    #                         if td.content is not None:
+    #                             for text in td.content:
+    #                                 if isinstance(text, rfc.Text) and text.content is not None:
+    #                                     if isinstance(text.content, str):
+    #                                         body.append(text.content)
+    #                     table_matrix.append(body[:2])
+    #     values = self._parse_table_content(table_matrix)
+    #     if values is not None:
+    #         if all(isinstance(val, MapValue) for val in values):
+    #             return Map(name, cast(List[MapValue], values))
+    #         else:
+    #             return Enum(name, cast(List[EnumValue],values))
+    #     return None
 
 
     def _process_section(self, section: rfc.Section, parser) -> None:
@@ -317,14 +318,17 @@ class ParsedRepresentation:
                     if isinstance(artwork, rfc.Artwork):
                         struct = self._process_structure(artwork, parser)
                         if struct is not None:
-                            self.structs.append(struct)
-            elif isinstance(content, rfc.Table):
-                table = self._process_table(content)
-                if table is not None:
-                    if isinstance(table, Map):
-                        self.maps.append(table)
-                    elif isinstance(table, Enum):
-                        self.enums.append(table)
+                            if isinstance(struct, Structure):
+                                self.structs.append(struct)
+                            elif isinstance(struct, Enum):
+                                self.enums.append(struct)
+            # elif isinstance(content, rfc.Table):
+            #     table = self._process_table(content)
+            #     if table is not None:
+            #         if isinstance(table, Map):
+            #             self.maps.append(table)
+            #         elif isinstance(table, Enum):
+            #             self.enums.append(table)
         if section.sections is not None:
             for sub_section in section.sections:
                 self._process_section(sub_section, parser)
@@ -347,13 +351,7 @@ class ParsedRepresentation:
                 return container
         return None
 
-    def generate_representation(self, document: rfc.RFC, parser) -> None:
-        self._parse_structures(document, parser)
-        if self.structs is None:
-            raise Exception('No structures to represent')
-        protocol_name = self._get_protocol_name(document)
-        if protocol_name is not None:
-            self.name = protocol_name
+    def _traverse_structures(self) -> None:
         for struct in self.structs:
             fields = []
             for field in struct.fields:
@@ -367,9 +365,27 @@ class ParsedRepresentation:
                     fields.append(field)
             struct.fields = fields
 
+    def _traverse_enums(self) -> None:
+        for enum in self.enums:
+            for field in enum.values:
+                if isinstance(field, EnumValue):
+                    if field.type is None:
+                        struct = self.find_struct(field.name)
+                        if struct is not None:
+                            field.type = struct
+
+    def generate_representation(self, document: rfc.RFC, parser) -> None:
+        self._parse_structures(document, parser)
+        if self.structs is None:
+            raise Exception('No structures to represent')
+        protocol_name = self._get_protocol_name(document)
+        if protocol_name is not None:
+            self.name = protocol_name
+        self._traverse_structures()
+        self._traverse_enums()
+
     def __str__(self):
         enums = '\n'.join([str(value) for value in self.enums])
-        maps = '\n'.join([str(value) for value in self.maps])
         structs = '\n'.join([str(value) for value in self.structs])
-        return f'ParsedRepresentation(name={self.name}):\n{enums}\n{maps}\n{structs}'
+        return f'ParsedRepresentation(name={self.name}):\n{enums}\n{structs}'
         

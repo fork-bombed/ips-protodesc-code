@@ -4800,6 +4800,53 @@ the sole exception of the Frame Type field; see <xref target="frames" format="de
       <t indent="0" pn="section-16-7">Versions (<xref target="versions" format="default" sectionFormat="of" derivedContent="Section 15"/>), packet numbers sent in the header
 (<xref target="packet-encoding" format="default" sectionFormat="of" derivedContent="Section 17.1"/>), and the length of connection IDs in long header packets
 (<xref target="long-header" format="default" sectionFormat="of" derivedContent="Section 17.2"/>) are described using integers but do not use this encoding.</t>
+      <figure anchor="fig-var-len" align="left" suppress-title="false" pn="figure-55">
+        <name slugifiedName="name-var-len-format">Variable-Length Integer Enum</name>
+        <artwork name="" type="" align="left" alt="" pn="section-16.5-1.1">
+Variable-Length Integer {
+    6 Bit Integer,
+    14 Bit Integer,
+    30 Bit Integer,
+    62 Bit Integer,
+}
+          </artwork>
+      </figure>
+      <figure anchor="fig-var-len" align="left" suppress-title="false" pn="figure-55">
+        <name slugifiedName="name-var-len-format">Variable-Length Integer Enum</name>
+        <artwork name="" type="" align="left" alt="" pn="section-16.5-1.1">
+6 Bit Integer {
+    Type (2) = 0x00,
+    Length (6),
+}
+          </artwork>
+      </figure>
+      <figure anchor="fig-var-len" align="left" suppress-title="false" pn="figure-55">
+        <name slugifiedName="name-var-len-format">Variable-Length Integer Enum</name>
+        <artwork name="" type="" align="left" alt="" pn="section-16.5-1.1">
+14 Bit Integer {
+    Type (2) = 0x01,
+    Length (14),
+}
+          </artwork>
+      </figure>
+      <figure anchor="fig-var-len" align="left" suppress-title="false" pn="figure-55">
+        <name slugifiedName="name-var-len-format">Variable-Length Integer Enum</name>
+        <artwork name="" type="" align="left" alt="" pn="section-16.5-1.1">
+30 Bit Integer {
+    Type (2) = 0x02,
+    Length (30),
+}
+          </artwork>
+      </figure>
+      <figure anchor="fig-var-len" align="left" suppress-title="false" pn="figure-55">
+        <name slugifiedName="name-var-len-format">Variable-Length Integer Enum</name>
+        <artwork name="" type="" align="left" alt="" pn="section-16.5-1.1">
+62 Bit Integer {
+    Type (2) = 0x03,
+    Length (62),
+}
+          </artwork>
+      </figure>
     </section>
     <section anchor="packet-formats" numbered="true" toc="include" removeInRFC="false" pn="section-17">
       <name slugifiedName="name-packet-formats">Packet Formats</name>
