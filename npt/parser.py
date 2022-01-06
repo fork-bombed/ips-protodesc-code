@@ -54,6 +54,12 @@ class Parser(abc.ABC):
         """
         pass
 
+# ==== Parsing Error ====
+
+class ParsingError(Exception):
+    def __init__(self, reason):
+        self.reason = reason    
+
 # ==== Parsed Objects ====
 
 @dataclass(frozen=True)
@@ -69,6 +75,7 @@ class Range:
 class FieldType:
     name: str
 
+
 @dataclass
 class Structure:
     name: str
@@ -77,6 +84,7 @@ class Structure:
     def __str__(self):
         fields = '\n\t'.join([str(field) for field in self.fields])
         return f'Structure(name={self.name}, fields=\n\t{fields}\n)'
+
 
 @dataclass
 class EnumValue:
@@ -102,7 +110,7 @@ class Enum:
 
 @dataclass
 class StructContainer(FieldType):
-    size: Union[int, str, Range]
+    size: Any
     target: Structure
 
     def __str__(self):
@@ -111,7 +119,7 @@ class StructContainer(FieldType):
 
 @dataclass
 class Field(FieldType):
-    size: Union[int, str, Range]
+    size: Any
     value: Optional[Any]
 
     def __str__(self):
@@ -244,73 +252,6 @@ class ParsedRepresentation:
                 pass
         return None
 
-    # def _verify_enum_value(self, value: str) -> Optional[int]:
-    #     # Use first value for any ranges
-    #     if '-' in value:
-    #         value = value.split('-')[0]
-    #     if value.isnumeric():
-    #         return int(value)
-    #     elif value.startswith('0x'):
-    #         return int(value, base=16)
-    #     return None
-
-    # def _parse_table_content(self, table: list) -> Optional[List[Union[MapValue,EnumValue]]]:
-    #     body = table[1:]
-    #     table_content: List[Union[MapValue, EnumValue]] = []
-    #     for item in body:
-    #         value, name = item
-    #         value = self._verify_enum_value(value)
-    #         if value is None:
-    #             return None
-    #         elif name.isnumeric():
-    #             # Maps should be [value, key] but are 
-    #             # represented key -> value
-    #             table_content.append(MapValue(key=value, value=int(name)))
-    #         else:
-    #             table_content.append(EnumValue(name, value))
-    #     return table_content
-
-    # def _process_table(self, table: rfc.Table) -> Optional[Union[Enum, Map]]:
-    #     # Assume that all Enums contain [value, name] in first
-    #     # two columns. This means we only have to retrieve the
-    #     # first two in order to create an enum. Same with Maps.
-    #     name: str = ""
-    #     table_matrix = []
-    #     if table.name is not None:
-    #         if table.name.content is not None:
-    #             if isinstance(table.name.content[0], rfc.Text):
-    #                 name = table.name.content[0].content
-    #     if table.thead is not None:
-    #         for tr in table.thead.content:
-    #             heading: List[str] = []
-    #             if tr.content is not None:
-    #                 for th in tr.content:
-    #                     for text in th.content:
-    #                         if isinstance(text, rfc.Text) and text.content is not None:
-    #                             if isinstance(text.content, str):
-    #                                 heading.append(text.content)
-    #             table_matrix.append(heading[:2])
-    #     if table.tbodies is not None:
-    #         for tbody in table.tbodies:
-    #             for tr in tbody.content:
-    #                 body: List[str] = []
-    #                 if tr.content is not None:
-    #                     for td in tr.content:
-    #                         if td.content is not None:
-    #                             for text in td.content:
-    #                                 if isinstance(text, rfc.Text) and text.content is not None:
-    #                                     if isinstance(text.content, str):
-    #                                         body.append(text.content)
-    #                     table_matrix.append(body[:2])
-    #     values = self._parse_table_content(table_matrix)
-    #     if values is not None:
-    #         if all(isinstance(val, MapValue) for val in values):
-    #             return Map(name, cast(List[MapValue], values))
-    #         else:
-    #             return Enum(name, cast(List[EnumValue],values))
-    #     return None
-
-
     def _process_section(self, section: rfc.Section, parser) -> None:
         for content in section.content:
             if isinstance(content, rfc.Figure):
@@ -322,13 +263,6 @@ class ParsedRepresentation:
                                 self.structs.append(struct)
                             elif isinstance(struct, Enum):
                                 self.enums.append(struct)
-            # elif isinstance(content, rfc.Table):
-            #     table = self._process_table(content)
-            #     if table is not None:
-            #         if isinstance(table, Map):
-            #             self.maps.append(table)
-            #         elif isinstance(table, Enum):
-            #             self.enums.append(table)
         if section.sections is not None:
             for sub_section in section.sections:
                 self._process_section(sub_section, parser)
@@ -351,6 +285,16 @@ class ParsedRepresentation:
                 return container
         return None
 
+    def _find_field_length(self, struct: Structure, field: Field) -> Optional[Field]:
+        field_name = field.name
+        for struct_field in struct.fields:
+            if struct_field != field:
+                if isinstance(struct_field, Field):
+                    struct_field_name = struct_field.name.lower()
+                    if field_name.lower() in struct_field_name and ' length' in struct_field_name:
+                        return struct_field
+        return None      
+
     def _traverse_structures(self) -> None:
         for struct in self.structs:
             fields = []
@@ -360,6 +304,11 @@ class ParsedRepresentation:
                     if container is not None:
                         fields.append(container)
                     else:
+                        if isinstance(field, Field):
+                            if isinstance(field.size, Range):
+                                length_field = self._find_field_length(struct, field)
+                                if length_field is not None:
+                                    field.size = length_field
                         fields.append(field)
                 else:
                     fields.append(field)

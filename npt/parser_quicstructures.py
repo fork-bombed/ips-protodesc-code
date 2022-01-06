@@ -37,9 +37,6 @@ import npt.protocol
 import npt.parser
 from typing     import Any, cast, Optional, Union, List, Tuple
 
-from abc         import ABC, abstractmethod
-from dataclasses import dataclass
-
 def stem(phrase):
     if phrase[-1] == 's':
         return phrase[:-1]
@@ -70,9 +67,9 @@ class QUICStructureParser(npt.parser.Parser):
         self.structs = {}
         self.enums = {}
 
-    def _to_number_expression(self, field: npt.protocol.StructField) -> npt.protocol.MethodInvocationExpression:
+    def _to_number_expression(self, field_name: str) -> npt.protocol.MethodInvocationExpression:
         return npt.protocol.MethodInvocationExpression(
-                npt.protocol.FieldAccessExpression(npt.protocol.SelfExpression(), field.field_name), 
+                npt.protocol.FieldAccessExpression(npt.protocol.SelfExpression(), field_name), 
                 'to_number', 
                 []
         )
@@ -92,7 +89,7 @@ class QUICStructureParser(npt.parser.Parser):
             const_expr = self._const_expression(value)
             return [
                 npt.protocol.MethodInvocationExpression(
-                    self._to_number_expression(struct_field),
+                    self._to_number_expression(struct_field.field_name),
                     'eq',
                     [self._argument_expression(const_expr)]
                 )
@@ -104,12 +101,12 @@ class QUICStructureParser(npt.parser.Parser):
             min_expr = self._const_expression(minval)
             max_expr = self._const_expression(maxval)
             ge_expr = npt.protocol.MethodInvocationExpression(
-                        self._to_number_expression(struct_field),
+                        self._to_number_expression(struct_field.field_name),
                         'ge',
                         [self._argument_expression(min_expr)]
                     )
             le_expr = npt.protocol.MethodInvocationExpression(
-                        self._to_number_expression(struct_field),
+                        self._to_number_expression(struct_field.field_name),
                         'le',
                         [self._argument_expression(max_expr)]
                     )
@@ -123,6 +120,44 @@ class QUICStructureParser(npt.parser.Parser):
         else:
             return
 
+    def _get_field_length_expression(self, struct: npt.parser.Structure, field: npt.parser.Field) -> Optional[npt.protocol.MethodInvocationExpression]:
+        if isinstance(field.size, npt.parser.Field):
+            struct_name = valid_type_name_convertor(struct.name)
+            field_name = valid_field_name_convertor(field.size.name)
+            type_name = f'{struct_name}_{field_name}'
+            if self.proto.has_type(type_name):
+                bitstring = self.proto.get_type(type_name)
+                if bitstring is not None:
+                    return self._to_number_expression(field_name)
+        return None
+
+    def _get_field_size_expression(self, field: npt.parser.Field) -> Optional[npt.protocol.MethodInvocationExpression]:
+        if isinstance(field.size, npt.parser.Range):
+            if field.size.min is None and field.size.max is None:
+                return None
+            minval = field.size.min or 0
+            maxval = field.size.max
+            min_expr = self._const_expression(minval)
+            ge_expr = npt.protocol.MethodInvocationExpression(
+                        self._to_number_expression(valid_field_name_convertor(field.name)),
+                        'ge',
+                        [self._argument_expression(min_expr)]
+                    )
+            if maxval is not None:
+                max_expr = self._const_expression(maxval)
+                le_expr = npt.protocol.MethodInvocationExpression(
+                        self._to_number_expression(valid_field_name_convertor(field.name)),
+                        'le',
+                        [self._argument_expression(max_expr)]
+                    )
+                return npt.protocol.MethodInvocationExpression(
+                    ge_expr,
+                    'and',
+                    [self._argument_expression(le_expr)]
+                )
+            return ge_expr
+        return None
+
     def _process_field(self, struct: npt.parser.Structure, field: npt.parser.Field) -> npt.protocol.StructField:
         field_name = valid_field_name_convertor(field.name)
         struct_name = valid_type_name_convertor(struct.name)
@@ -131,13 +166,27 @@ class QUICStructureParser(npt.parser.Parser):
         value = field.value
         # Temporarily handle arbitrary and range fields
         if isinstance(field.size, npt.parser.Range):
-            size = 1337
+            if field.size.min is None and field.size.max is None:
+                size = None
+            else:
+                size = 8888
+            if field.name == 'ECN Counts':
+                size = 9999
+                # size = self._get_field_size_expression(field)
+        if isinstance(field.size, npt.parser.Field):
+            field_size = self._get_field_length_expression(struct, field)
+            if field_size is not None:
+                size = field_size
+            else:
+                raise npt.parser.ParsingError(f'Could not find length field for {field.name}')
         # Temporarily handle variable length encoded fields
         if field.size == 'i':
             size = 8000
+        if isinstance(size, int):
+            size = npt.protocol.ConstantExpression(npt.protocol.Number(), size)
         field_type = npt.protocol.BitString(
                 name = bitstring_name,
-                size = npt.protocol.ConstantExpression(npt.protocol.Number(), size)
+                size = size
         )
         struct_field = npt.protocol.StructField(
                 field_name = field_name,
@@ -221,6 +270,7 @@ class QUICStructureParser(npt.parser.Parser):
         quic_representation = npt.parser.ParsedRepresentation(cast(rfc.RFC,input), 'npt/grammar_quicstructures.txt')
         self.proto.set_protocol_name(quic_representation.name)
         self.process_parsed_representation(quic_representation)
+        print(quic_representation)
         for struct in self.structs.values():
             self.proto.define_pdu(valid_type_name_convertor(struct.name))
         for struct in self.enums.values():
