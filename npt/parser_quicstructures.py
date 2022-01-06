@@ -179,9 +179,12 @@ class QUICStructureParser(npt.parser.Parser):
                 size = field_size
             else:
                 raise npt.parser.ParsingError(f'Could not find length field for {field.name}')
-        # Temporarily handle variable length encoded fields
-        if field.size == 'i':
-            size = 8000
+        if size == 'i':
+            var_len_name = valid_type_name_convertor('Variable length integer')
+            if self.proto.has_type(var_len_name):
+                variable_length_integer = self.proto.get_type(var_len_name)
+                # TODO: Infer size from variable length integer
+                # size = npt.protocol.Array(bitstring_name, variable_length_integer, None)
         if isinstance(size, int):
             size = npt.protocol.ConstantExpression(npt.protocol.Number(), size)
         field_type = npt.protocol.BitString(
@@ -211,7 +214,7 @@ class QUICStructureParser(npt.parser.Parser):
                 struct_field, struct_constraints = self._traverse_field(struct, field.target)
         return struct_field, struct_constraints
 
-    def _process_structure(self, struct: npt.parser.Structure) -> npt.protocol.Struct:
+    def _process_structure(self, struct: npt.parser.Structure) -> Optional[npt.protocol.Struct]:
         fields = []
         constraints = []
         for field in struct.fields:
@@ -219,35 +222,39 @@ class QUICStructureParser(npt.parser.Parser):
             fields.append(field_type)
             if field_constraints is not None:
                 constraints += field_constraints
-        return npt.protocol.Struct(
+        processed_struct = npt.protocol.Struct(
                 name        = valid_type_name_convertor(struct.name),
                 fields      = fields,
                 constraints = constraints,
                 actions     = []
         )
+        if processed_struct is not None:
+            self.structs[processed_struct.name] = processed_struct
+            self.proto.add_type(processed_struct)
+        return processed_struct
 
-    def _process_enum(self, enum: npt.parser.Enum) -> npt.protocol.Enum:
+    def _process_enum(self, enum: npt.parser.Enum) -> Optional[npt.protocol.Enum]:
         variants = []
         for value in enum.values:
             if value.type is None:
                 raise npt.protocol.ProtocolTypeError("Enum must point to a type")
             type_name = valid_type_name_convertor(value.type.name)
-            variant = self.structs.get(type_name)
+            variant = self.structs.get(type_name) or self._process_structure(value.type)
             if variant is not None:
                 variants.append(variant)
-        return npt.protocol.Enum(valid_type_name_convertor(enum.name), variants)
+        processed_enum = npt.protocol.Enum(valid_type_name_convertor(enum.name), variants)
+        if processed_enum is not None:
+            self.enums[processed_enum.name] = processed_enum
+            self.proto.add_type(processed_enum)
+        return processed_enum
 
     def process_parsed_representation(self, representation: npt.parser.ParsedRepresentation) -> None:
-        for struct in representation.structs:
-            processed_struct = self._process_structure(struct)
-            if processed_struct is not None:
-                self.structs[processed_struct.name] = processed_struct
-                self.proto.add_type(processed_struct)
         for enum in representation.enums:
-            processed_enum = self._process_enum(enum)
-            if processed_enum is not None:
-                self.enums[processed_enum.name] = processed_enum
-                self.proto.add_type(processed_enum)
+            if self.enums.get(valid_type_name_convertor(enum.name)) is None:
+                processed_enum = self._process_enum(enum)
+        for struct in representation.structs:
+            if self.structs.get(valid_type_name_convertor(struct.name)) is None:
+                processed_struct = self._process_structure(struct)
 
     def build_protocol(self, proto: Optional[npt.protocol.Protocol], input: Union[str, rfc.RFC], name: str=None) -> npt.protocol.Protocol:
         """
@@ -271,8 +278,8 @@ class QUICStructureParser(npt.parser.Parser):
         self.proto.set_protocol_name(quic_representation.name)
         self.process_parsed_representation(quic_representation)
         print(quic_representation)
+        for enum in self.enums.values():
+            self.proto.define_pdu(valid_type_name_convertor(enum.name))
         for struct in self.structs.values():
-            self.proto.define_pdu(valid_type_name_convertor(struct.name))
-        for struct in self.enums.values():
             self.proto.define_pdu(valid_type_name_convertor(struct.name))
         return self.proto
