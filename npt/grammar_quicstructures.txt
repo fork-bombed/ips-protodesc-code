@@ -24,8 +24,8 @@ size = varlen
     | minval
     | maxval
     | arblen
-    | 'i'
     | value
+    | string
 
 fixed_value = range
     | value

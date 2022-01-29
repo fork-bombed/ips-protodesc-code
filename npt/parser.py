@@ -123,8 +123,11 @@ class Field(FieldType):
     value: Optional[Any]
 
     def __str__(self):
+        size = self.size
+        if isinstance(size, Field) or isinstance(size, Enum):
+            size = size.name
         val = f', value={self.value if self.value is not None else None}'
-        return f'Field(name={self.name}, size={self.size}{val if self.value is not None else ""})'
+        return f'Field(name={self.name}, size={size}{val if self.value is not None else ""})'
 
 
 @dataclass
@@ -244,11 +247,13 @@ class ParsedRepresentation:
         if type(artwork.content) is rfc.Text:
             try:
                 return cast(Structure, parser(artwork.content.content).structure())
-            except parsley.ParseError as e:
+            # NOTE: ParseError cannot be caught as Parsley doesn't implement its own exceptions.
+            #       Have to catch all exceptions for now...
+            except Exception as e:
                 pass
             try:
                 return cast(Enum, parser(artwork.content.content).enum())
-            except parsley.ParseError as e:
+            except Exception as e:
                 pass
         return None
 
@@ -309,6 +314,13 @@ class ParsedRepresentation:
                                 length_field = self._find_field_length(struct, field)
                                 if length_field is not None:
                                     field.size = length_field
+                            elif isinstance(field.size, str):
+                                for struct in self.structs:
+                                    if struct.name == field.size:
+                                        field.size = struct
+                                for enum in self.enums:
+                                    if enum.name == field.size:
+                                        field.size = enum
                         fields.append(field)
                 else:
                     fields.append(field)

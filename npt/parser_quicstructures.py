@@ -35,7 +35,7 @@ import npt.rfc as rfc
 import npt.protocol
 
 import npt.parser
-from typing     import Any, cast, Optional, Union, List, Tuple
+from typing     import Any, cast, Optional, Union, List, Tuple, Dict
 
 def stem(phrase):
     if phrase[-1] == 's':
@@ -64,8 +64,8 @@ def int_to_bytes(x: int) -> bytes:
 class QUICStructureParser(npt.parser.Parser):
     def __init__(self) -> None:
         super().__init__()
-        self.structs = {}
-        self.enums = {}
+        self.structs: Dict[str, npt.protocol.Struct] = {}
+        self.enums: Dict[str, npt.protocol.Enum] = {}
 
     def _to_number_expression(self, field_name: str) -> npt.protocol.MethodInvocationExpression:
         return npt.protocol.MethodInvocationExpression(
@@ -83,8 +83,9 @@ class QUICStructureParser(npt.parser.Parser):
     def _const_expression(self, number: int) -> npt.protocol.ConstantExpression:
         return npt.protocol.ConstantExpression(npt.protocol.Number(), number)
 
-    def _process_field_value(self, struct_field: npt.protocol.StructField, value: Union[int, npt.parser.Range]) -> Optional[List[npt.protocol.MethodInvocationExpression]]:
-        if value is None: return
+    def _process_field_value(self, struct_field: npt.protocol.StructField, value: Optional[Any]) -> Optional[List[npt.protocol.MethodInvocationExpression]]:
+        if value is None:
+            return None
         if isinstance(value, int):
             const_expr = self._const_expression(value)
             return [
@@ -95,7 +96,8 @@ class QUICStructureParser(npt.parser.Parser):
                 )
             ]
         elif isinstance(value, npt.parser.Range):
-            if value.max is None: return
+            if value.max is None: 
+                return None
             minval = value.min or 0
             maxval = value.max
             min_expr = self._const_expression(minval)
@@ -117,8 +119,7 @@ class QUICStructureParser(npt.parser.Parser):
                     [self._argument_expression(le_expr)]
                 )
             ]
-        else:
-            return
+        return None
 
     def _get_field_length_expression(self, struct: npt.parser.Structure, field: npt.parser.Field) -> Optional[npt.protocol.MethodInvocationExpression]:
         if isinstance(field.size, npt.parser.Field):
@@ -158,7 +159,7 @@ class QUICStructureParser(npt.parser.Parser):
             return ge_expr
         return None
 
-    def _process_field(self, struct: npt.parser.Structure, field: npt.parser.Field) -> npt.protocol.StructField:
+    def _process_field(self, struct: npt.parser.Structure, field: npt.parser.Field) -> Tuple[npt.protocol.StructField, Optional[List[npt.protocol.MethodInvocationExpression]]]:
         field_name = valid_field_name_convertor(field.name)
         struct_name = valid_type_name_convertor(struct.name)
         bitstring_name = f'{struct_name}_{field_name}'
@@ -179,6 +180,8 @@ class QUICStructureParser(npt.parser.Parser):
                 size = field_size
             else:
                 raise npt.parser.ParsingError(f'Could not find length field for {field.name}')
+        if isinstance(field.size, npt.parser.Enum):
+            size = 4000000
         if size == 'i':
             var_len_name = valid_type_name_convertor('Variable length integer')
             if self.proto.has_type(var_len_name):
@@ -199,7 +202,7 @@ class QUICStructureParser(npt.parser.Parser):
         self.proto.add_type(field_type)
         return struct_field, struct_constraints
 
-    def _traverse_field(self, struct: npt.parser.Structure, field: Union[npt.parser.FieldType, npt.parser.StructContainer]) -> npt.protocol.StructField:
+    def _traverse_field(self, struct: npt.parser.Structure, field: Union[npt.parser.FieldType, npt.parser.StructContainer]) -> Tuple[npt.protocol.StructField, Optional[List[npt.protocol.MethodInvocationExpression]]]:
         if isinstance(field, npt.parser.Field):
             struct_field, struct_constraints = self._process_field(struct, field)
         # TODO: Handle container fields
@@ -216,7 +219,7 @@ class QUICStructureParser(npt.parser.Parser):
 
     def _process_structure(self, struct: npt.parser.Structure) -> Optional[npt.protocol.Struct]:
         fields = []
-        constraints = []
+        constraints: List[npt.protocol.Expression] = []
         for field in struct.fields:
             field_type, field_constraints = self._traverse_field(struct, field)
             fields.append(field_type)
@@ -234,7 +237,7 @@ class QUICStructureParser(npt.parser.Parser):
         return processed_struct
 
     def _process_enum(self, enum: npt.parser.Enum) -> Optional[npt.protocol.Enum]:
-        variants = []
+        variants: List[npt.protocol.RepresentableType] = []
         for value in enum.values:
             if value.type is None:
                 raise npt.protocol.ProtocolTypeError("Enum must point to a type")
@@ -251,10 +254,10 @@ class QUICStructureParser(npt.parser.Parser):
     def process_parsed_representation(self, representation: npt.parser.ParsedRepresentation) -> None:
         for enum in representation.enums:
             if self.enums.get(valid_type_name_convertor(enum.name)) is None:
-                processed_enum = self._process_enum(enum)
+                self._process_enum(enum)
         for struct in representation.structs:
             if self.structs.get(valid_type_name_convertor(struct.name)) is None:
-                processed_struct = self._process_structure(struct)
+                self._process_structure(struct)
 
     def build_protocol(self, proto: Optional[npt.protocol.Protocol], input: Union[str, rfc.RFC], name: str=None) -> npt.protocol.Protocol:
         """
@@ -278,8 +281,12 @@ class QUICStructureParser(npt.parser.Parser):
         self.proto.set_protocol_name(quic_representation.name)
         self.process_parsed_representation(quic_representation)
         print(quic_representation)
-        for enum in self.enums.values():
-            self.proto.define_pdu(valid_type_name_convertor(enum.name))
-        for struct in self.structs.values():
-            self.proto.define_pdu(valid_type_name_convertor(struct.name))
+        # Define PDU QUIC Packet
+        # - Enum has two variants: long header, short header
+        # for enum in self.enums:
+        #     self.proto.define_pdu(enum)
+        # for struct in self.structs:
+        #     self.proto.define_pdu(struct)
+        self.proto.define_pdu('Long_header_packet')
+        self.proto.define_pdu('T1_rtt_packet')
         return self.proto
