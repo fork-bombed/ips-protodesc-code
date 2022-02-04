@@ -49,3 +49,12 @@ structure = ws string:name ws '{'
 enum = ws string:name ws '{'
         (ws enum_field)+:values
         ws '}' ws -> new_enum(name.strip(), values)
+
+pdu_packet_list = string:packet ws '(' string ')' -> packet
+pdu_def = 'Packets with the' ws string:pdu_name ws 'are' ((',' (ws 'and')? ws)? pdu_packet_list)+:packets -> (packets, pdu_name)
+
+# variant_list = ("an " | "a ") pdu_name:name (', ' ('or ')? ("an " | "a ") pdu_name:names)*:names -> [name] + names
+# enum_more_than_two = <(word:w ?(w != "An" and w != "A")' '?)+>? ("An "|"A ") pdu_name:name "is one of: " variant_list:names "." -> (name, names)
+# enum_two = <(word:w ?(w != "An" and w != "A")' '?)+>? ("An "|"A ") pdu_name:name "is either " ("an " | "a ") pdu_name:var1 'or ' ("an " | "a ") pdu_name:var2 "." -> (name, [var1, var2])
+
+# pdu_definition = enum_two | enum_more_than_two

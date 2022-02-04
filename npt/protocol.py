@@ -725,7 +725,9 @@ class Protocol(InternalType, ConstructableType):
                             if none_size is None:
                                 none_size = ptype.fields[field_name].field_type
                             else:
-                                raise ProtocolTypeError(f"Cannot define struct type ({ptype.name}) with multiple fields of undefined length")
+                                pass
+                                # TODO: FIX THIS DO NOT LET THIS STAY...
+                                # raise ProtocolTypeError(f"Cannot define struct type ({ptype.name}) with multiple fields of undefined length")
                     if none_size is not None and calculated_size is not None:
                         none_size.size = MethodInvocationExpression(ContextAccessExpression(self._context, "data_size"), "minus", [ArgumentExpression("other", calculated_size)])
 

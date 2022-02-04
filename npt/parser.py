@@ -31,6 +31,8 @@
 import abc
 from typing       import cast, List, Tuple, Dict, Optional, Any, Union
 from dataclasses import dataclass
+
+from numpy import isin
 import npt.protocol
 import parsley
 
@@ -109,12 +111,12 @@ class Enum:
 
 
 @dataclass
-class StructContainer(FieldType):
+class TypeContainer(FieldType):
     size: Any
-    target: Structure
+    target: Union[Structure, Enum]
 
     def __str__(self):
-        return f'StructContainer(name={self.name}, size={self.size}, target=Structure({self.target.name}))'
+        return f'TypeContainer(name={self.name}, size={self.size}, target=Type({self.target.name}))'
 
 
 @dataclass
@@ -132,7 +134,7 @@ class Field(FieldType):
 
 @dataclass
 class RepeatingField(FieldType):
-    target: Union[Field, StructContainer]
+    target: Union[Field, TypeContainer]
 
     def __str__(self):
         return f'RepeatingField({self.target})'
@@ -140,7 +142,7 @@ class RepeatingField(FieldType):
 
 @dataclass
 class OptionalField(FieldType):
-    target: Union[Field, StructContainer]
+    target: Union[Field, TypeContainer]
 
     def __str__(self):
         return f'OptionalField({self.target})'
@@ -259,7 +261,19 @@ class ParsedRepresentation:
 
     def _process_section(self, section: rfc.Section, parser) -> None:
         for content in section.content:
-            if isinstance(content, rfc.Figure):
+            if isinstance(content, rfc.T):
+                combined = []
+                for text in content.content:
+                    if isinstance(text, rfc.Text):
+                        combined.append(text.content)
+                combined = ''.join(combined)
+                if 'Packets with the' in combined:
+                #     print(combined)
+                    try:
+                        print(parser(text.content.lower()).pdu_def())
+                    except:
+                        pass
+            elif isinstance(content, rfc.Figure):
                 for artwork in content.content:
                     if isinstance(artwork, rfc.Artwork):
                         struct = self._process_structure(artwork, parser)
@@ -268,6 +282,7 @@ class ParsedRepresentation:
                                 self.structs.append(struct)
                             elif isinstance(struct, Enum):
                                 self.enums.append(struct)
+
         if section.sections is not None:
             for sub_section in section.sections:
                 self._process_section(sub_section, parser)
@@ -277,17 +292,27 @@ class ParsedRepresentation:
             for section in document.middle.content:
                 self._process_section(section, parser)
 
-    def _get_struct_container(self, field: FieldType) -> Optional[FieldType]:
+    def _get_type(self, name: str) -> Optional[Union[Structure, Enum]]:
+        name = name.lower()
         for struct in self.structs:
-            if struct.name == field.name:
-                container: FieldType
-                if isinstance(field, Field):
-                    container = StructContainer(field.name, field.size, struct)
-                elif isinstance(field, OptionalField):
-                    container = OptionalField(field.name, StructContainer(field.target.name, field.target.size, struct))
-                elif isinstance(field, RepeatingField):
-                    container = RepeatingField(field.name, StructContainer(field.target.name, field.target.size, struct))
-                return container
+            if struct.name.lower() == name:
+                return struct
+        for enum in self.enums:
+            if enum.name.lower() == name:
+                return enum
+        return None
+
+    def _get_struct_container(self, field: FieldType) -> Optional[FieldType]:
+        container_type = self._get_type(field.name)
+        if container_type is not None:
+            container: FieldType
+            if isinstance(field, Field) or isinstance(field, Enum):
+                container = TypeContainer(field.name, field.size, container_type)
+            elif isinstance(field, OptionalField):
+                container = OptionalField(field.name, TypeContainer(field.target.name, field.target.size, container_type))
+            elif isinstance(field, RepeatingField):
+                container = RepeatingField(field.name, TypeContainer(field.target.name, field.target.size, container_type))
+            return container
         return None
 
     def _find_field_length(self, struct: Structure, field: Field) -> Optional[Field]:
@@ -315,9 +340,9 @@ class ParsedRepresentation:
                                 if length_field is not None:
                                     field.size = length_field
                             elif isinstance(field.size, str):
-                                for struct in self.structs:
-                                    if struct.name == field.size:
-                                        field.size = struct
+                                # for s in self.structs:
+                                #     if s.name == field.size:
+                                #         field.size = s
                                 for enum in self.enums:
                                     if enum.name == field.size:
                                         field.size = enum

@@ -3053,12 +3053,30 @@ PROTOCOL_VIOLATION.  Frames always fit within a single QUIC packet and cannot
 span multiple packets.</t>
         <t>Each frame begins with a Frame Type, indicating its type, followed by
 additional type-dependent fields:</t>
-        <figure anchor="frame-layout">
-          <name>Generic Frame Layout</name>
+        <figure anchor="frame-types-enum">
+          <name>Frame Types</name>
           <artwork><![CDATA[
 Frame {
-  Frame Type (Variable-Length Integer),
-  Type-Dependent Fields (..),
+  PADDING Frame,
+  PING Frame,
+  ACK Frame,
+  RESET_STREAM Frame,
+  STOP_SENDING Frame,
+  CRYPTO Frame,
+  NEW_TOKEN Frame,
+  STREAM Frame,
+  MAX_DATA Frame,
+  MAX_STREAM_DATA Frame,
+  MAX_STREAMS Frame,
+  DATA_BLOCKED Frame,
+  STREAM_DATA_BLOCKED Frame,
+  STREAMS_BLOCKED Frame,
+  NEW_CONNECTION_ID Frame,
+  RETIRE_CONNECTION_ID Frame,
+  PATH_CHALLENGE Frame,
+  PATH_RESPONSE Frame,
+  CONNECTION_CLOSE Frame,
+  HANDSHAKE_DONE Frame,
 }
 ]]></artwork>
         </figure>

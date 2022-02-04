@@ -159,65 +159,73 @@ class QUICStructureParser(npt.parser.Parser):
             return ge_expr
         return None
 
-    def _process_field(self, struct: npt.parser.Structure, field: npt.parser.Field) -> Tuple[npt.protocol.StructField, Optional[List[npt.protocol.MethodInvocationExpression]]]:
+    def _process_field_type(self, struct: npt.parser.Structure, field: Union[npt.parser.Field, npt.parser.TypeContainer]) -> Optional[Union[npt.protocol.BitString, npt.protocol.Enum]]:
         field_name = valid_field_name_convertor(field.name)
         struct_name = valid_type_name_convertor(struct.name)
         bitstring_name = f'{struct_name}_{field_name}'
         size = field.size
-        value = field.value
+        if isinstance(field, npt.parser.TypeContainer):
+            if isinstance(field.target, npt.parser.Structure):
+                return self._process_structure(field.target)
+            elif isinstance(field.target, npt.parser.Enum):
+                return self._process_enum(field.target)
+        if isinstance(size, npt.parser.Enum):
+            return self._process_enum(size)
+        if isinstance(size, npt.parser.Field):
+            field_size = self._get_field_length_expression(struct, field)
+            if field_size is not None:
+                size = field_size
         # Temporarily handle arbitrary and range fields
-        if isinstance(field.size, npt.parser.Range):
-            if field.size.min is None and field.size.max is None:
+        elif isinstance(size, npt.parser.Range):
+            if size.min is None and size.max is None:
                 size = None
             else:
                 size = 8888
             if field.name == 'ECN Counts':
                 size = 9999
                 # size = self._get_field_size_expression(field)
-        if isinstance(field.size, npt.parser.Field):
-            field_size = self._get_field_length_expression(struct, field)
-            if field_size is not None:
-                size = field_size
-            else:
-                raise npt.parser.ParsingError(f'Could not find length field for {field.name}')
-        if isinstance(field.size, npt.parser.Enum):
-            size = 4000000
-        if size == 'i':
-            var_len_name = valid_type_name_convertor('Variable length integer')
-            if self.proto.has_type(var_len_name):
-                variable_length_integer = self.proto.get_type(var_len_name)
-                # TODO: Infer size from variable length integer
-                # size = npt.protocol.Array(bitstring_name, variable_length_integer, None)
         if isinstance(size, int):
             size = npt.protocol.ConstantExpression(npt.protocol.Number(), size)
-        field_type = npt.protocol.BitString(
+        return npt.protocol.BitString(
                 name = bitstring_name,
                 size = size
         )
+
+    def _process_field(self, struct: npt.parser.Structure, field: Union[npt.parser.Field,npt.parser.TypeContainer]) -> Tuple[npt.protocol.StructField, Optional[List[npt.protocol.MethodInvocationExpression]]]:
+        field_name = valid_field_name_convertor(field.name)
+        field_type = self._process_field_type(struct, field)
+        struct_constraints = []
         struct_field = npt.protocol.StructField(
                 field_name = field_name,
                 field_type = field_type
         )
-        struct_constraints = self._process_field_value(struct_field, value)
-        self.proto.add_type(field_type)
+        if isinstance(field, npt.parser.Field):
+            struct_constraints = self._process_field_value(struct_field, field.value)
+        if not self.proto.has_type(field_type.name):
+            self.proto.add_type(field_type)
         return struct_field, struct_constraints
 
-    def _traverse_field(self, struct: npt.parser.Structure, field: Union[npt.parser.FieldType, npt.parser.StructContainer]) -> Tuple[npt.protocol.StructField, Optional[List[npt.protocol.MethodInvocationExpression]]]:
+    def _traverse_field(self, struct: npt.parser.Structure, field: Union[npt.parser.FieldType, npt.parser.TypeContainer]) -> Tuple[npt.protocol.StructField, Optional[List[npt.protocol.MethodInvocationExpression]]]:
         if isinstance(field, npt.parser.Field):
             struct_field, struct_constraints = self._process_field(struct, field)
-        # TODO: Handle container fields
-        if isinstance(field, npt.parser.StructContainer):
-            temp = npt.parser.Field(field.name, field.size, None)
-            struct_field, struct_constraints = self._process_field(struct, temp)
+        if isinstance(field, npt.parser.TypeContainer):
+            struct_field, struct_constraints = self._process_field(struct, field)
         if isinstance(field, npt.parser.RepeatingField) or isinstance(field, npt.parser.OptionalField):
             if isinstance(field.target, npt.parser.Field):
                 temp = npt.parser.Field(field.target.name, field.target.size, field.target.value)
                 struct_field, struct_constraints = self._process_field(struct, temp)
             else:
                 struct_field, struct_constraints = self._traverse_field(struct, field.target)
+        if isinstance(field, npt.parser.Field):
+            if isinstance(field.size, npt.parser.Enum):
+                # Remove constraints on Enum types
+                struct_constraints = []
         return struct_field, struct_constraints
 
     def _process_structure(self, struct: npt.parser.Structure) -> Optional[npt.protocol.Struct]:
+        existing_struct = self.structs.get(valid_type_name_convertor(struct.name))
+        if existing_struct is not None:
+            return existing_struct
         fields = []
         constraints: List[npt.protocol.Expression] = []
         for field in struct.fields:
@@ -237,6 +245,9 @@ class QUICStructureParser(npt.parser.Parser):
         return processed_struct
 
     def _process_enum(self, enum: npt.parser.Enum) -> Optional[npt.protocol.Enum]:
+        existing_enum = self.enums.get(valid_type_name_convertor(enum.name))
+        if existing_enum is not None:
+            return existing_enum
         variants: List[npt.protocol.RepresentableType] = []
         for value in enum.values:
             if value.type is None:
@@ -279,6 +290,13 @@ class QUICStructureParser(npt.parser.Parser):
 
         quic_representation = npt.parser.ParsedRepresentation(cast(rfc.RFC,input), 'npt/grammar_quicstructures.txt')
         self.proto.set_protocol_name(quic_representation.name)
+        variants = [
+            npt.parser.EnumValue('initial packet',quic_representation.structs[10]),
+            npt.parser.EnumValue('0-rtt packet',quic_representation.structs[11]),
+            npt.parser.EnumValue('handshake packet',quic_representation.structs[12])
+        ]
+        long_header_pdu = npt.parser.Enum('long header pdu', variants)
+        quic_representation.enums.append(long_header_pdu)
         self.process_parsed_representation(quic_representation)
         print(quic_representation)
         # Define PDU QUIC Packet
@@ -287,6 +305,6 @@ class QUICStructureParser(npt.parser.Parser):
         #     self.proto.define_pdu(enum)
         # for struct in self.structs:
         #     self.proto.define_pdu(struct)
-        self.proto.define_pdu('Long_header_packet')
-        self.proto.define_pdu('T1_rtt_packet')
+        self.proto.define_pdu('Long_header_pdu')
+        self.proto.define_pdu('Packet_payload')
         return self.proto
