@@ -28,6 +28,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # =================================================================================================
 
+from ctypes import Structure
 import string
 import parsley
 
@@ -264,11 +265,18 @@ class QUICStructureParser(npt.parser.Parser):
 
     def process_parsed_representation(self, representation: npt.parser.ParsedRepresentation) -> None:
         for enum in representation.enums:
-            if self.enums.get(valid_type_name_convertor(enum.name)) is None:
-                self._process_enum(enum)
+            self._process_enum(enum)
         for struct in representation.structs:
-            if self.structs.get(valid_type_name_convertor(struct.name)) is None:
-                self._process_structure(struct)
+            self._process_structure(struct)
+        for pdu in representation.pdus:
+            out: Optional[Union[npt.protocol.Enum, npt.protocol.Struct]] = None
+            if isinstance(pdu, npt.parser.Enum):
+                out = self._process_enum(pdu)
+            elif isinstance(pdu, npt.parser.Structure):
+                out = self._process_structure(pdu)
+            if out is not None:
+                self.proto.define_pdu(out.name)
+
 
     def build_protocol(self, proto: Optional[npt.protocol.Protocol], input: Union[str, rfc.RFC], name: str=None) -> npt.protocol.Protocol:
         """
@@ -290,21 +298,13 @@ class QUICStructureParser(npt.parser.Parser):
 
         quic_representation = npt.parser.ParsedRepresentation(cast(rfc.RFC,input), 'npt/grammar_quicstructures.txt')
         self.proto.set_protocol_name(quic_representation.name)
-        variants = [
-            npt.parser.EnumValue('initial packet',quic_representation.structs[10]),
-            npt.parser.EnumValue('0-rtt packet',quic_representation.structs[11]),
-            npt.parser.EnumValue('handshake packet',quic_representation.structs[12])
-        ]
-        long_header_pdu = npt.parser.Enum('long header pdu', variants)
-        quic_representation.enums.append(long_header_pdu)
+        # variants = [
+        #     npt.parser.EnumValue('initial packet',quic_representation.structs[10]),
+        #     npt.parser.EnumValue('0-rtt packet',quic_representation.structs[11]),
+        #     npt.parser.EnumValue('handshake packet',quic_representation.structs[12])
+        # ]
+        # long_header_pdu = npt.parser.Enum('long header pdu', variants)
+        # quic_representation.enums.append(long_header_pdu)
         self.process_parsed_representation(quic_representation)
         print(quic_representation)
-        # Define PDU QUIC Packet
-        # - Enum has two variants: long header, short header
-        # for enum in self.enums:
-        #     self.proto.define_pdu(enum)
-        # for struct in self.structs:
-        #     self.proto.define_pdu(struct)
-        self.proto.define_pdu('Long_header_pdu')
-        self.proto.define_pdu('Packet_payload')
         return self.proto

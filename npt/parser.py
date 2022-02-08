@@ -147,7 +147,6 @@ class OptionalField(FieldType):
     def __str__(self):
         return f'OptionalField({self.target})'
 
-
 # =======================================================================================
 # Parsed Representation boundaries
 #
@@ -184,6 +183,8 @@ class ParsedRepresentation:
     def __init__(self, document: rfc.RFC, grammar_filename: str) -> None:
         self.parser = self.build_grammar(grammar_filename)
         self.structs: List[Structure] = []
+        self._pdus = {}
+        self.pdus: List[Enum] = []
         self.enums: List[Enum] = []
         self.name: str = ""
         self.generate_representation(document, self.parser)
@@ -267,12 +268,14 @@ class ParsedRepresentation:
                     if isinstance(text, rfc.Text):
                         combined.append(text.content)
                 combined = ''.join(combined)
-                if 'Packets with the' in combined:
-                #     print(combined)
-                    try:
-                        print(parser(text.content.lower()).pdu_def())
-                    except:
-                        pass
+                try:
+                    packet_name, pdu_name = parser(combined.lower()).pdu_def()
+                    if pdu_name in self._pdus:
+                        self._pdus[pdu_name].append(packet_name)
+                    else:
+                        self._pdus[pdu_name] = [packet_name]
+                except Exception as e:
+                    pass
             elif isinstance(content, rfc.Figure):
                 for artwork in content.content:
                     if isinstance(artwork, rfc.Artwork):
@@ -360,6 +363,19 @@ class ParsedRepresentation:
                         if struct is not None:
                             field.type = struct
 
+    def _traverse_pdus(self) -> None:
+        for pdu in self._pdus:
+            # if self._get_type(pdu) is not None:
+            variants: List[Union[Structure,Enum]] = []
+            for variant in self._pdus[pdu]:
+                v = self._get_type(variant)
+                if v is not None:
+                    variants.append(v)
+            variants = [EnumValue(variant.name, variant) for variant in variants]
+            pdu_enum = Enum(pdu.title()+' PDU', variants)
+            if len(variants) > 0:
+                self.pdus.append(pdu_enum)
+
     def generate_representation(self, document: rfc.RFC, parser) -> None:
         self._parse_structures(document, parser)
         if self.structs is None:
@@ -369,6 +385,7 @@ class ParsedRepresentation:
             self.name = protocol_name
         self._traverse_structures()
         self._traverse_enums()
+        self._traverse_pdus()
 
     def __str__(self):
         enums = '\n'.join([str(value) for value in self.enums])

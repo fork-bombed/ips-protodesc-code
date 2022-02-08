@@ -4363,7 +4363,7 @@ process.</t>
         </section>
         <section anchor="packet-initial">
           <name>Initial Packet</name>
-          <t>An Initial packet uses long headers with a type value of 0x00.  It carries the
+          <t>An Initial packet uses a Long Header Packet with a type value of 0x00.  It carries the
 first CRYPTO frames sent by the client and server to perform key exchange, and
 it carries ACK frames in either direction.</t>
           <figure anchor="initial-format">
@@ -4447,7 +4447,7 @@ Initial keys are discarded.</t>
         </section>
         <section anchor="packet-0rtt">
           <name>0-RTT</name>
-          <t>A 0-RTT packet uses long headers with a type value of 0x01, followed by the
+          <t>A 0-RTT packet uses a Long Header Packet with a type value of 0x01, followed by the
 Length and Packet Number fields; see <xref target="long-header"/>.  The first byte contains
 the Reserved and Packet Number Length bits; see <xref target="long-header"/>.  A 0-RTT packet
 is used to carry "early" data from the client to the server as part of the
@@ -4495,7 +4495,7 @@ for exceeding stream data limits).</t>
         </section>
         <section anchor="packet-handshake">
           <name>Handshake Packet</name>
-          <t>A Handshake packet uses long headers with a type value of 0x02, followed by the
+          <t>A Handshake packet uses a Long Header Packet with a type value of 0x02, followed by the
 Length and Packet Number fields; see <xref target="long-header"/>.  The first byte contains
 the Reserved and Packet Number Length bits; see <xref target="long-header"/>.  It is used
 to carry cryptographic handshake messages and acknowledgments from the server
@@ -4539,8 +4539,8 @@ protection keys are discarded.</t>
         </section>
         <section anchor="packet-retry">
           <name>Retry Packet</name>
-          <t>As shown in <xref target="retry-format"/>, a Retry packet uses a long packet header with a
-type value of 0x03. It carries an address validation token created by the
+          <t>A Retry Packet uses a Long Header Packet with a type value of 0x03, as shown 
+in <xref target="retry-format"/>. It carries an address validation token created by the
 server. It is used by a server that wishes to perform a retry; see
 <xref target="validate-handshake"/>.</t>
           <figure anchor="retry-format">
@@ -4654,7 +4654,7 @@ in <xref target="cid-auth"/>.</t>
 header.</t>
         <section anchor="packet-1rtt">
           <name>1-RTT Packet</name>
-          <t>A 1-RTT packet uses a short packet header. It is used after the version and
+          <t>A 1-RTT packet uses a Short Header Packet. It is used after the version and
 1-RTT keys are negotiated.</t>
           <figure>
             <name>1-RTT Packet</name>
