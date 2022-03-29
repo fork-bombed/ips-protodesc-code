@@ -161,7 +161,7 @@ class OptionalField(FieldType):
 # representation. The internal representation should be modified to accept a 
 # ParsedRepresentation object which will contain all the necessary data to convert 
 # into a protocol object.
-#
+
 # The parsed representation is simply used to represent data from the parser. It is 
 # an intermediate step to ensure that we have all the information before it is type
 # checked and converted into the internal representation. This means that the data 
@@ -171,7 +171,7 @@ class OptionalField(FieldType):
 #   - Order data
 #   - Make links between data
 #   - Add or remove data
-#
+
 # Below is a list of actions the parsed representation cannot do:
 #   - Enforce naming conventions
 #   - Type checking
@@ -343,9 +343,9 @@ class ParsedRepresentation:
                                 if length_field is not None:
                                     field.size = length_field
                             elif isinstance(field.size, str):
-                                # for s in self.structs:
-                                #     if s.name == field.size:
-                                #         field.size = s
+                                for s in self.structs:
+                                    if s.name == field.size:
+                                        field.size = s
                                 for enum in self.enums:
                                     if enum.name == field.size:
                                         field.size = enum
@@ -365,7 +365,6 @@ class ParsedRepresentation:
 
     def _traverse_pdus(self) -> None:
         for pdu in self._pdus:
-            # if self._get_type(pdu) is not None:
             variants: List[Union[Structure,Enum]] = []
             for variant in self._pdus[pdu]:
                 v = self._get_type(variant)

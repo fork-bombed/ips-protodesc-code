@@ -41,6 +41,19 @@ import re
 
 def camelcase(name: str) -> str:
     return name.replace("-", " ").replace("_", " ").title().replace(" ", "")
+    
+def filter_keywords(name: str) -> str:
+    keywords = [
+        'as', 'break', 'const', 'continue', 'crate', 'else', 'enum', 
+        'extern', 'false', 'fn', 'for', 'if', 'impl', 'in', 'let', 
+        'loop', 'match', 'mod', 'move', 'mut', 'pub', 'ref', 'return', 
+        'self', 'static', 'struct', 'super', 'trait', 'true', 
+        'type', 'unsafe', 'use', 'where', 'while', 'abstract', 'become',
+        'box', 'do', 'final', 'macro', 'override', 'priv', 'typeof', 
+        'unsized', 'virtual', 'yield', 'try', 'async', 'await', 'dyn']
+    if name.lower() in keywords:
+        return f'r#{name}'
+    return name
 
 class RustFormatter(Formatter):
     """
@@ -254,6 +267,7 @@ class RustFormatter(Formatter):
         field_names = []
         presence_constraints = []
         for field in struct.get_fields():
+            field.field_name = filter_keywords(field.field_name)
             type_name = field.field_type.name if isinstance(field.field_type, ConstructableType) else "nothing"
             if not(isinstance(field.is_present, ConstantExpression) and type(field.is_present.constant_type) is Boolean and field.is_present.constant_value is True):
                 self.output.append("    pub %s: Option<%s>,\n" % (field.field_name, camelcase(type_name)))
