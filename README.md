@@ -49,7 +49,7 @@ Overview
  npt can be executed as follows:
 
 ```
-python npt -d <output-dir> -of <output-format> <document>
+python npt -d <output-dir> -of <output-format> [-p <parser>] <document>
 ```
 
 where:
@@ -59,7 +59,6 @@ where:
 
  * **-d** *output_dir*, **--dir** *output_dir* is the directory in which
    to place results
-
 
  * **-f** *formats*, **--outformat** *formats* :
     List of outputs to generate from parsing the draft/rfc specification.
@@ -73,12 +72,23 @@ where:
     - *rust* : a rust protocol parser.
 
 
+* **-p** *parsers*, **--parser** *document parser*:
+    The parser to use on the document. This will default to the ASCII diagram
+    parser if the option is not present.
+
+    Currently supported output formats are :
+    - *asciidiagram*  : a parser for augmented packet header ASCII diagrams
+    - *quicstructure* : a parser for the QUIC packet description language
+
+
+
 *Example Usage*
 ```
    python npt -d foo -f simple examples/draft-mcquistin-quic-augmented-diagrams-03.xml 
    python npt -d foo -f simple examples/draft-mcquistin-augmented-ascii-diagrams-07.xml 
    python npt -d foo -f rust examples/draft-mcquistin-augmented-udp-example-00.xml 
    python npt -d foo -f rust examples/draft-mcquistin-augmented-tcp-example-00.xml 
+   python npt -d foo -f rust examples/rfc9000.xml 
 ```
 
 ## Acknowledgements
