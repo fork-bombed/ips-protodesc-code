@@ -88,7 +88,7 @@ where:
    python npt -d foo -f simple examples/draft-mcquistin-augmented-ascii-diagrams-07.xml 
    python npt -d foo -f rust examples/draft-mcquistin-augmented-udp-example-00.xml 
    python npt -d foo -f rust examples/draft-mcquistin-augmented-tcp-example-00.xml 
-   python npt -d foo -f rust examples/rfc9000.xml 
+   python npt -d foo -f rust -p quicstructure examples/rfc9000.xml 
 ```
 
 ## Acknowledgements
