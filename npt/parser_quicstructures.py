@@ -88,7 +88,7 @@ class QUICStructureParser(npt.parser.Parser):
     def _process_field_value(self, struct_field: npt.protocol.StructField, value: Optional[Any]) -> Optional[List[npt.protocol.MethodInvocationExpression]]:
         if value is None:
             return None
-        expr = self._to_number_expression(struct_field.field_name)
+        expr: npt.protocol.Expression = self._to_number_expression(struct_field.field_name)
         if isinstance(struct_field.field_type, npt.protocol.Enum):
             expr = npt.protocol.FieldAccessExpression(npt.protocol.SelfExpression(), struct_field.field_name)
         if isinstance(value, int):
@@ -164,7 +164,7 @@ class QUICStructureParser(npt.parser.Parser):
             return ge_expr
         return None
 
-    def _process_field_type(self, struct: npt.parser.Structure, field: Union[npt.parser.Field, npt.parser.TypeContainer]) -> Optional[Union[npt.protocol.BitString, npt.protocol.Enum]]:
+    def _process_field_type(self, struct: npt.parser.Structure, field: Union[npt.parser.Field, npt.parser.TypeContainer]) -> Union[npt.protocol.BitString, npt.protocol.Enum, npt.protocol.Struct]:
         field_name = valid_field_name_convertor(field.name)
         struct_name = valid_type_name_convertor(struct.name)
         bitstring_name = f'{struct_name}_{field_name}'
@@ -202,14 +202,16 @@ class QUICStructureParser(npt.parser.Parser):
     def _process_field(self, struct: npt.parser.Structure, field: Union[npt.parser.Field,npt.parser.TypeContainer], optional: Any = None) -> Tuple[npt.protocol.StructField, Optional[List[npt.protocol.MethodInvocationExpression]]]:
         field_name = valid_field_name_convertor(field.name)
         field_type = self._process_field_type(struct, field)
-        struct_constraints = []
+        struct_constraints: List[npt.protocol.MethodInvocationExpression] = []
         struct_field = npt.protocol.StructField(
                 field_name = field_name,
                 field_type = field_type,
                 is_present = optional
         )
         if isinstance(field, npt.parser.Field):
-            struct_constraints = self._process_field_value(struct_field, field.value)
+            constraints = self._process_field_value(struct_field, field.value)
+            if constraints is not None:
+                struct_constraints = constraints
         if not self.proto.has_type(field_type.name):
             self.proto.add_type(field_type)
         return struct_field, struct_constraints
@@ -232,7 +234,7 @@ class QUICStructureParser(npt.parser.Parser):
                 struct_constraints = []
         return struct_field, struct_constraints
 
-    def _process_structure(self, struct: npt.parser.Structure) -> Optional[npt.protocol.Struct]:
+    def _process_structure(self, struct: npt.parser.Structure) -> npt.protocol.Struct:
         existing_struct = self.structs.get(valid_type_name_convertor(struct.name))
         if existing_struct is not None:
             return existing_struct
@@ -254,7 +256,7 @@ class QUICStructureParser(npt.parser.Parser):
             self.proto.add_type(processed_struct)
         return processed_struct
 
-    def _process_enum(self, enum: npt.parser.Enum) -> Optional[npt.protocol.Enum]:
+    def _process_enum(self, enum: npt.parser.Enum) -> npt.protocol.Enum:
         existing_enum = self.enums.get(valid_type_name_convertor(enum.name))
         if existing_enum is not None:
             return existing_enum
@@ -281,8 +283,6 @@ class QUICStructureParser(npt.parser.Parser):
             out: Optional[Union[npt.protocol.Enum, npt.protocol.Struct]] = None
             if isinstance(pdu, npt.parser.Enum):
                 out = self._process_enum(pdu)
-            elif isinstance(pdu, npt.parser.Structure):
-                out = self._process_structure(pdu)
             if out is not None:
                 self.proto.define_pdu(out.name)
 

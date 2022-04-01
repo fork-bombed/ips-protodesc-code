@@ -183,7 +183,7 @@ class ParsedRepresentation:
     def __init__(self, document: rfc.RFC, grammar_filename: str) -> None:
         self.parser = self.build_grammar(grammar_filename)
         self.structs: List[Structure] = []
-        self._pdus = {}
+        self._pdus: Dict[str, List[str]] = {}
         self.pdus: List[Enum] = []
         self.enums: List[Enum] = []
         self.name: str = ""
@@ -263,11 +263,11 @@ class ParsedRepresentation:
     def _process_section(self, section: rfc.Section, parser) -> None:
         for content in section.content:
             if isinstance(content, rfc.T):
-                combined = []
+                combined_lst = []
                 for text in content.content:
                     if isinstance(text, rfc.Text):
-                        combined.append(text.content)
-                combined = ''.join(combined)
+                        combined_lst.append(text.content)
+                combined: str = ''.join(combined_lst)
                 try:
                     packet_name, pdu_name = parser(combined.lower()).pdu_def()
                     if pdu_name in self._pdus:
@@ -309,8 +309,10 @@ class ParsedRepresentation:
         container_type = self._get_type(field.name)
         if container_type is not None:
             container: FieldType
-            if isinstance(field, Field) or isinstance(field, Enum):
+            if isinstance(field, Field):
                 container = TypeContainer(field.name, field.size, container_type)
+            # elif isinstance(field, Enum):
+            #     container = TypeContainer(field.name, field.values, container_type)
             elif isinstance(field, OptionalField):
                 container = OptionalField(field.name, TypeContainer(field.target.name, field.target.size, container_type))
             elif isinstance(field, RepeatingField):
@@ -365,14 +367,14 @@ class ParsedRepresentation:
 
     def _traverse_pdus(self) -> None:
         for pdu in self._pdus:
-            variants: List[Union[Structure,Enum]] = []
+            variants: List[Structure] = []
             for variant in self._pdus[pdu]:
                 v = self._get_type(variant)
-                if v is not None:
+                if v is not None and isinstance(v, Structure):
                     variants.append(v)
-            variants = [EnumValue(variant.name, variant) for variant in variants]
-            pdu_enum = Enum(pdu.title()+' PDU', variants)
-            if len(variants) > 0:
+            converted_variants = [EnumValue(variant.name, variant) for variant in variants]
+            pdu_enum = Enum(pdu.title()+' PDU', converted_variants)
+            if len(converted_variants) > 0:
                 self.pdus.append(pdu_enum)
 
     def generate_representation(self, document: rfc.RFC, parser) -> None:
